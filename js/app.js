@@ -1,5 +1,5 @@
 import {
-  PORTIONS, DEFAULT_PORTION, INTENSITIES, EXERCISE_MINUTES, NEW_MENU_SIZES, MEALS,
+  PORTIONS, LEGACY_PORTIONS, DEFAULT_PORTION, INTENSITIES, EXERCISE_MINUTES, NEW_MENU_SIZES, MEALS,
   BODY_DAY, WEEK_START, RECENT_TAG_COUNT, FREQUENT_TAG_COUNT,
   SEARCH_RESULT_COUNT, CELEBRATE_MS, BASELINE_STEP, FOOD_GROUPS, STREAK_MILESTONES,
 } from './config.js';
@@ -52,19 +52,21 @@ window.addEventListener('popstate', () => {
   }
 });
 
+let lastRendered = null;
+
+// 같은 화면을 다시 그릴 때(버튼으로 값만 바뀔 때)는 스크롤 위치를 그대로 둔다
 function render() {
   const view = VIEWS[screen.name];
+  const same = lastRendered === screen;
+  const y = same ? app.querySelector('.screen')?.scrollTop || 0 : 0;
   app.innerHTML = view.html(screen);
   app.dataset.screen = screen.name;
+  lastRendered = screen;
+  if (same) {
+    const el = app.querySelector('.screen');
+    if (el) el.scrollTop = y;
+  }
   if (view.mount) view.mount(screen);
-}
-
-// 화면을 다시 그려도 스크롤 위치를 지킨다
-function keepScroll(fn) {
-  const y = app.querySelector('.screen')?.scrollTop || 0;
-  fn();
-  const el = app.querySelector('.screen');
-  if (el) el.scrollTop = y;
 }
 
 // 휴대폰 키보드가 올라와도 위쪽 막대가 화면에 붙어 있도록, 앱 크기를 실제 보이는 영역에 맞춘다
@@ -79,6 +81,19 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener('scroll', syncViewport);
   syncViewport();
 }
+// 화면 끝에서 더 당겨도 페이지 전체가 끌려가지 않게 한다 (위쪽 막대가 움직이지 않도록)
+let touchY = 0;
+document.addEventListener('touchstart', (e) => { touchY = e.touches[0].clientY; }, { passive: true });
+document.addEventListener('touchmove', (e) => {
+  if (e.touches.length > 1) return; // 두 손가락 확대는 그대로 둔다
+  const sc = e.target.closest('.screen');
+  if (!sc || e.target.closest('input[type="range"]')) { if (!e.target.closest('input')) e.preventDefault(); return; }
+  const dy = e.touches[0].clientY - touchY;
+  const atTop = sc.scrollTop <= 0;
+  const atBottom = sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 1;
+  if ((dy > 0 && atTop) || (dy < 0 && atBottom)) e.preventDefault();
+}, { passive: false });
+
 // 입력칸을 누르면 그 칸이 보이는 곳으로 스크롤한다
 app.addEventListener('focusin', (e) => {
   if (e.target.matches('input')) setTimeout(() => e.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300);
@@ -123,7 +138,7 @@ function findMenu(id) {
 }
 
 function portionLabel(id) {
-  return PORTIONS.find((p) => p.id === id)?.label || '';
+  return [...PORTIONS, ...LEGACY_PORTIONS].find((p) => p.id === id)?.label || '';
 }
 
 function todayKey() {
@@ -295,14 +310,6 @@ const home = {
           </div>
         </div>`
       : '';
-    const isReviewDay = new Date().getDay() === WEEK_START;
-    const reviewCard = isReviewDay
-      ? `<button class="card review-card" data-act="review">
-          <span class="card-emoji">📝</span>
-          <span class="card-title">지난주 돌아보기</span>
-          <span class="card-sub">${data.reviews?.[lastWeekStart()] ? '리뷰 다시 보기' : '지난 한 주는 어땠을까?'}</span>
-        </button>`
-      : '';
     const canClose = hasMeal(day) || day.exercises.length;
     const closeBtn = canClose
       ? `<button class="btn primary big" data-act="close">${day.closed ? '📊 오늘 결과 보기' : '🌟 오늘 마감'}</button>`
@@ -315,7 +322,6 @@ const home = {
         ${yesterdayCard}
         ${statusRow}
         ${bodyCard}
-        ${reviewCard}
         <div class="meal-grid">${mealCards}</div>
         <button class="card exercise-card ${minutes ? 'done' : ''}" data-act="exercise">
           <span class="card-emoji">🏃</span>
@@ -344,7 +350,6 @@ const home = {
     },
     settings() { go({ name: 'settings' }); },
     badges() { go({ name: 'badges' }); },
-    review() { go({ name: 'review', key: lastWeekStart() }); },
     calendar() {
       const now = new Date();
       go({ name: 'calendar', year: now.getFullYear(), month: now.getMonth(), week: null });
@@ -395,10 +400,13 @@ function searchResultsHtml(s) {
 function cartHtml(s) {
   if (!s.items.length) return '<p class="hint center">위에서 먹은 메뉴를 눌러 담아 줘</p>';
   return s.items.map((it, idx) => `
-    <div class="cart-row">
-      <div class="cart-name">${h(it.name)}</div>
-      <div class="seg" role="group" aria-label="${h(it.name)} 양">
-        ${PORTIONS.map((p) => `<button class="seg-btn ${it.portion === p.id ? 'on' : ''}" data-act="portion" data-idx="${idx}" data-p="${p.id}">${p.label}</button>`).join('')}
+    <div class="cart-row ${idx === 0 && s.justAdded === it.menuId ? 'pop-in' : ''}">
+      <div class="cart-name">${h(it.name)} <small class="portion-now">${portionLabel(it.portion)}</small></div>
+      <div class="portion-scale" role="radiogroup" aria-label="${h(it.name)} 양">
+        <span class="ps-end">조금</span>
+        ${PORTIONS.map((p, i) => `<button class="ps-dot ${it.portion === p.id ? 'on' : ''}" style="--d:${20 + i * 6}px" role="radio"
+          aria-checked="${it.portion === p.id}" aria-label="${p.label}" data-act="portion" data-idx="${idx}" data-p="${p.id}"><i></i></button>`).join('')}
+        <span class="ps-end">많이</span>
       </div>
       <button class="icon-btn small" data-act="remove" data-idx="${idx}" aria-label="${h(it.name)} 빼기">✕</button>
     </div>`).join('');
@@ -406,7 +414,9 @@ function cartHtml(s) {
 
 function addItem(s, menu) {
   if (s.items.some((i) => i.menuId === menu.id)) return;
-  s.items.push({ menuId: menu.id, name: menu.name, kcal: menu.kcal, groups: menu.groups, portion: DEFAULT_PORTION });
+  // 새로 담은 메뉴를 맨 위에 두어 바로 보이게 하고, 한 번만 등장 애니메이션을 준다
+  s.items.unshift({ menuId: menu.id, name: menu.name, kcal: menu.kcal, groups: menu.groups, portion: DEFAULT_PORTION });
+  s.justAdded = menu.id;
 }
 
 const meal = {
@@ -440,6 +450,10 @@ const meal = {
       s.query = input.value;
       document.getElementById('results').innerHTML = searchResultsHtml(s);
     });
+    if (s.justAdded) {
+      app.querySelector('.cart-row.pop-in')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      s.justAdded = null;
+    }
     if (s.focusSearch) {
       s.focusSearch = false;
       input.focus();
@@ -715,7 +729,7 @@ const signed = (n) => (n > 0 ? `+${fmt(n)}` : n < 0 ? `−${fmt(-n)}` : '0');
 function dayRecordsHtml(day) {
   const meals = MEALS.filter((m) => (day?.meals?.[m.id] || []).length).map((m) => `
     <div class="rec-row"><b>${m.emoji} ${m.label}</b>
-      <span>${day.meals[m.id].map((it) => `${h(it.name)}${it.portion !== DEFAULT_PORTION ? ` (${portionLabel(it.portion)})` : ''}`).join(', ')}</span></div>`).join('');
+      <span>${day.meals[m.id].map((it) => `${h(it.name)}${it.portion !== DEFAULT_PORTION && it.portion !== 'normal' ? ` (${portionLabel(it.portion)})` : ''}`).join(', ')}</span></div>`).join('');
   const ex = (day?.exercises || []).map((x) => {
     const it = INTENSITIES.find((i) => i.id === x.intensity);
     return `<div class="rec-row"><b>${it.emoji} 운동</b><span>${it.label} · ${x.minutes}분</span></div>`;
@@ -915,7 +929,10 @@ const calendar = {
         <section class="card cal-card"><div class="cal-grid">${calendarGrid(s)}</div>
           <p class="cal-legend">🍚 식사 · 🏃 운동 · <i class="cal-dot"></i> 체중</p></section>
         ${monthSection(s)}
-        <button class="btn big" data-act="summary">📋 ${s.month + 1}월 요약 보기</button>
+        <div class="cal-actions">
+          <button class="btn big" data-act="summary">📋 ${s.month + 1}월 요약</button>
+          <button class="btn big ${getData().reviews?.[lastWeekStart()] ? '' : 'fresh'}" data-act="review" data-key="${lastWeekStart()}">📝 지난주 돌아보기</button>
+        </div>
         ${weeklySection(s)}
         ${reviewSection(s)}
         <section class="card chart-card" id="bmi"><div class="card-title">BMI</div><p class="card-sub">불러오는 중…</p></section>
@@ -927,7 +944,7 @@ const calendar = {
     mday(s, d) {
       const i = Number(d.idx);
       s.mday = s.mday === i ? null : i;
-      keepScroll(render);
+      render();
     },
     month(s, d) {
       s.mday = null;
@@ -940,7 +957,7 @@ const calendar = {
     week(s, d) {
       const i = Number(d.idx);
       s.week = s.week === i ? null : i;
-      keepScroll(render);
+      render();
     },
     summary(s) { go({ name: 'summary', year: s.year, month: s.month, from: s }); },
     review(s, d) { go({ name: 'review', key: d.key, from: s }); },

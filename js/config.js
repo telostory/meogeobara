@@ -1,13 +1,22 @@
 // 나중에 바꿀 수 있는 초기값을 모두 여기 모아 둔다.
 // 숫자를 바꾸고 싶으면 이 파일만 고치면 된다.
 
-// 양 계수: 메뉴 1인분 kcal에 곱한다
+// 양 계수: 메뉴 1인분 kcal에 곱한다. 1~5단계, 가운데(3)가 보통 1인분
 export const PORTIONS = [
+  { id: 'p1', label: '아주 조금', factor: 0.6 },
+  { id: 'p2', label: '조금', factor: 0.8 },
+  { id: 'p3', label: '보통', factor: 1.0 },
+  { id: 'p4', label: '많이', factor: 1.2 },
+  { id: 'p5', label: '아주 많이', factor: 1.4 },
+];
+export const DEFAULT_PORTION = 'p3';
+
+// 예전 3단계로 저장된 기록을 읽을 때 쓴다 (고치지 않는다)
+export const LEGACY_PORTIONS = [
   { id: 'small', label: '조금', factor: 0.7 },
   { id: 'normal', label: '보통', factor: 1.0 },
   { id: 'large', label: '많이', factor: 1.3 },
 ];
-export const DEFAULT_PORTION = 'normal';
 
 // 운동 강도별 MET 값과 한 줄 설명
 export const INTENSITIES = [

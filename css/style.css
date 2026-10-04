@@ -27,7 +27,7 @@ html, body {
   overflow-wrap: anywhere;
 }
 
-html, body { height: 100%; overflow: hidden; touch-action: manipulation; }
+html, body { height: 100%; overflow: hidden; touch-action: manipulation; overscroll-behavior: none; }
 
 /* 앱은 실제로 보이는 영역에 고정하고, 안쪽(.screen)만 스크롤한다.
    그래야 키보드가 올라와도 위쪽 막대가 끌려 올라가지 않는다. */
@@ -115,7 +115,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -673,3 +673,79 @@ button.card:active { transform: translateY(3px); border-bottom-width: 2px; margi
 
 .yesterday-card { width: 100%; background: var(--yellow-soft); border-color: var(--fur); }
 .key.line.meal, .key.line.meal::after { background: #8a5a3c; }
+
+/* ---------- 양 고르기 (1~5단계 동그라미) ---------- */
+
+.cart-row:not(:has(.seg)) { grid-template-areas: "name x" "seg seg"; }
+.cart-row .portion-scale { grid-area: seg; }
+.portion-now { margin-left: 6px; font-size: 14px; font-weight: 700; color: var(--grass-dark); }
+
+.portion-scale { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 4px 2px; }
+.ps-end { font-size: 14px; font-weight: 700; color: var(--fur-dark); white-space: nowrap; }
+
+.ps-dot {
+  flex: 1;
+  height: 56px;
+  min-width: 44px;
+  padding: 0;
+  border: none;
+  background: none;
+  display: grid;
+  place-items: center;
+}
+
+.ps-dot i {
+  width: var(--d);
+  height: var(--d);
+  border-radius: 50%;
+  background: var(--cream);
+  border: 3px solid var(--line);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.ps-dot.on i { background: var(--yellow); border-color: var(--fur); transform: scale(1.08); }
+.ps-dot:active i { transform: scale(0.9); }
+
+/* 새로 담은 메뉴가 위에서 쏙 나타난다 */
+.cart-row.pop-in { animation: popIn 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+@keyframes popIn {
+  0% { opacity: 0; transform: translateY(-14px) scale(0.92); background: var(--yellow); }
+  60% { background: var(--yellow-soft); }
+  100% { opacity: 1; transform: none; background: var(--white); }
+}
+
+/* ---------- 캘린더 버튼 줄 ---------- */
+
+.cal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cal-actions .btn { font-size: 18px; padding: 10px 6px; }
+.cal-actions .btn.fresh { background: var(--yellow-soft); border-color: var(--fur); }
+
+/* ---------- 아이패드처럼 넓은 화면 ---------- */
+
+@media (min-width: 700px) {
+  html, body { background: var(--yellow-soft); }
+
+  #app {
+    max-width: 640px;
+    box-shadow: 0 0 0 1px var(--line), 0 10px 40px rgba(91, 69, 54, 0.12);
+  }
+
+  body { font-size: 19px; }
+  .screen { padding: 28px 32px 40px; gap: 18px; }
+  .topbar, .home-head { padding-left: 24px; padding-right: 24px; }
+  .q { font-size: 32px; }
+  .meal-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .meal-card { min-height: 150px; }
+  .badge-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .btn.big { min-height: 72px; }
+  .celebrate .btn, .new-badges { max-width: 380px; }
+  .wk-cell i { width: 42px; height: 42px; font-size: 20px; }
+  .cal-day { min-height: 64px; }
+  .cal-num { font-size: 17px; }
+  .cal-icons { font-size: 14px; }
+  #toast { max-width: 560px; }
+}
+
+@media (min-width: 700px) and (orientation: landscape) {
+  #app { max-width: 720px; }
+}

@@ -1,7 +1,7 @@
 // 칼로리 계산은 모두 여기서 코드로 한다. Claude에게 맡기지 않는다.
 // 같은 기록이면 언제나 같은 숫자가 나와야 한다.
 
-import { PORTIONS, INTENSITIES, EER_TABLE, REF_WEIGHT_TABLE, MEALS } from './config.js';
+import { PORTIONS, LEGACY_PORTIONS, INTENSITIES, EER_TABLE, REF_WEIGHT_TABLE, MEALS } from './config.js';
 import { parseKey } from './util.js';
 import { streakInfo } from './streak.js';
 
@@ -39,7 +39,7 @@ export function weightOn(data, key) {
 }
 
 export function itemKcal(item) {
-  const factor = PORTIONS.find((p) => p.id === item.portion)?.factor ?? 1;
+  const factor = [...PORTIONS, ...LEGACY_PORTIONS].find((p) => p.id === item.portion)?.factor ?? 1;
   return item.kcal * factor;
 }
 
