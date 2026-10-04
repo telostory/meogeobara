@@ -143,3 +143,21 @@ export function weekDigest(data, start) {
     text: lines.join('\n'),
   };
 }
+
+// 한 달 날짜별 먹은 에너지와 운동 시간 (month는 0~11). 기록 없는 날은 null
+export function monthDaily(data, year, month, today = dateKey(new Date())) {
+  const n = new Date(year, month + 1, 0).getDate();
+  const out = [];
+  for (let d = 1; d <= n; d += 1) {
+    const key = dateKey(new Date(year, month, d));
+    const day = data.days[key];
+    const future = key > today;
+    out.push({
+      day: d,
+      key,
+      intake: !future && hasMeal(day) ? intakeKcal(day) : null,
+      minutes: future ? null : (day?.exercises || []).reduce((a, x) => a + x.minutes, 0) || (day ? 0 : null),
+    });
+  }
+  return out;
+}

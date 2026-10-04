@@ -59,9 +59,6 @@ export const SEARCH_RESULT_COUNT = 8;
 // 축하 화면이 떠 있는 시간(밀리초)
 export const CELEBRATE_MS = 1800;
 
-// 체중·키 입력의 처음 값 (기록이 하나도 없을 때 버튼으로 맞추기 시작하는 값)
-export const BODY_START = { weight: 30.0, height: 130.0 };
-
 // 섭취가 기준선의 이 비율보다 적으면 한마디를 '더 먹자' 문구로 바꾼다
 export const LOW_INTAKE_RATIO = 0.7;
 
@@ -108,9 +105,8 @@ export const WEEKS_FOR_GRAPH = 3;
 // 주간 그래프에 보여줄 주의 수
 export const GRAPH_WEEKS = 8;
 
-// 스트릭 프리즈: 처음에 가진 개수(최대 개수)와 다시 채워지는 연속 기록 일수
-export const FREEZE_MAX = 1;
-export const FREEZE_REFILL_DAYS = 7;
+// 연속 기록 진척 막대의 목표 일수 (다음 목표까지 얼마나 남았는지 보여준다)
+export const STREAK_MILESTONES = [3, 7, 14, 30, 50, 100];
 
 // 기록한 날이 이보다 적은 주는 Claude를 부르지 않고 고정 문구를 보여준다
 export const REVIEW_MIN_DAYS = 3;

@@ -1,13 +1,13 @@
 import {
   PORTIONS, DEFAULT_PORTION, INTENSITIES, EXERCISE_MINUTES, NEW_MENU_SIZES, MEALS,
   BODY_DAY, WEEK_START, RECENT_TAG_COUNT, FREQUENT_TAG_COUNT,
-  SEARCH_RESULT_COUNT, CELEBRATE_MS, BODY_START, BASELINE_STEP, FOOD_GROUPS, FREEZE_REFILL_DAYS,
+  SEARCH_RESULT_COUNT, CELEBRATE_MS, BASELINE_STEP, FOOD_GROUPS, STREAK_MILESTONES,
 } from './config.js';
 import { dayResult, hasMeal, recommendedBaseline, baseline, ageYears, ageMonths, itemKcal } from './calc.js';
-import { weeklySeries, recordedWeekCount, bodyPoints, monthSummary, lastWeekStart, weekDigest } from './progress.js';
+import { weeklySeries, recordedWeekCount, bodyPoints, monthSummary, lastWeekStart, weekDigest, monthDaily } from './progress.js';
 import { hasApiKey, setApiKey, estimateMenu, writeReview, testConnection } from './claude.js';
 import { loadTable, bmiValue, percentile, inChildRange } from './bmi.js';
-import { weeklyCharts, bmiChart } from './charts.js';
+import { weeklyCharts, bmiChart, monthCharts } from './charts.js';
 import { pickPhrase } from './phrases.js';
 import { streakInfo } from './streak.js';
 import { BADGES, awardBadges } from './badges.js';
@@ -15,7 +15,9 @@ import { playCheer } from './sound.js';
 import { WEEKS_FOR_GRAPH, GRAPH_WEEKS, REVIEW_MIN_DAYS } from './config.js';
 import { BASE_MENUS, STARTER_TAGS } from './menus.js';
 import { getData, getDay, save } from './storage.js';
-import { dateKey, parseKey, prettyDate, escapeHtml as h, matchesQuery } from './util.js';
+import { dateKey, parseKey, prettyDate, escapeHtml as h, matchesQuery, weekStartKey } from './util.js';
+
+const weekStartKeyOf = (d) => weekStartKey(d, WEEK_START);
 
 const app = document.getElementById('app');
 let screen = null; // 지금 보고 있는 화면 { name, ...상태 }
@@ -32,7 +34,6 @@ function go(next) {
     else history.pushState({ inner: true }, '');
   }
   render();
-  window.scrollTo(0, 0);
 }
 
 function goHome() {
@@ -57,6 +58,31 @@ function render() {
   app.dataset.screen = screen.name;
   if (view.mount) view.mount(screen);
 }
+
+// 화면을 다시 그려도 스크롤 위치를 지킨다
+function keepScroll(fn) {
+  const y = app.querySelector('.screen')?.scrollTop || 0;
+  fn();
+  const el = app.querySelector('.screen');
+  if (el) el.scrollTop = y;
+}
+
+// 휴대폰 키보드가 올라와도 위쪽 막대가 화면에 붙어 있도록, 앱 크기를 실제 보이는 영역에 맞춘다
+function syncViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  document.documentElement.style.setProperty('--vv-h', `${vv.height}px`);
+  document.documentElement.style.setProperty('--vv-top', `${vv.offsetTop}px`);
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', syncViewport);
+  window.visualViewport.addEventListener('scroll', syncViewport);
+  syncViewport();
+}
+// 입력칸을 누르면 그 칸이 보이는 곳으로 스크롤한다
+app.addEventListener('focusin', (e) => {
+  if (e.target.matches('input')) setTimeout(() => e.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300);
+});
 
 // 버튼 클릭은 data-act 하나로 모아서 처리한다
 app.addEventListener('click', (e) => {
@@ -108,9 +134,22 @@ function todayKey() {
 
 const thisYear = new Date().getFullYear();
 
+function numberField(id, value, unit, { decimal = false, placeholder = '' } = {}) {
+  return `<label class="num-field">
+    <input id="${id}" class="text-input num" type="number" ${decimal ? 'inputmode="decimal" step="0.1"' : 'inputmode="numeric" pattern="[0-9]*"'}
+      placeholder="${placeholder}" value="${value ?? ''}">
+    <span>${unit}</span>
+  </label>`;
+}
+
+function readNumber(id) {
+  const v = parseFloat(String(document.getElementById(id)?.value || '').replace(',', '.'));
+  return Number.isFinite(v) ? v : null;
+}
+
 const onboarding = {
   html(s) {
-    const total = 4;
+    const total = 3;
     const top = `<header class="topbar">
       ${s.step > 1 ? '<button class="icon-btn" data-act="prev" aria-label="뒤로">←</button>' : '<span class="icon-btn-space"></span>'}
       <div class="progress"><div class="progress-fill" style="width:${(s.step / total) * 100}%"></div></div>
@@ -122,20 +161,13 @@ const onboarding = {
         <input id="name" class="text-input" maxlength="10" autocomplete="off" placeholder="이름" value="${h(s.userName || '')}">
         <button class="btn primary big" data-act="nameNext">다음</button>`;
     } else if (s.step === 2) {
-      body = `<h1 class="q">몇 년에 태어났어?</h1>
-        <div class="stepper">
-          <button class="btn step-btn" data-act="year" data-d="-10">−10</button>
-          <button class="btn step-btn" data-act="year" data-d="-1">−1</button>
-          <div class="step-value">${s.birthYear}<small>년</small></div>
-          <button class="btn step-btn" data-act="year" data-d="1">+1</button>
-          <button class="btn step-btn" data-act="year" data-d="10">+10</button>
+      body = `<h1 class="q">언제 태어났어?</h1>
+        <div class="num-row">
+          ${numberField('birthYear', s.birthYear, '년', { placeholder: String(thisYear - 10) })}
+          ${numberField('birthMonth', s.birthMonth, '월', { placeholder: '3' })}
         </div>
-        <button class="btn primary big" data-act="next">다음</button>`;
-    } else if (s.step === 3) {
-      const months = Array.from({ length: 12 }, (_, i) => i + 1)
-        .map((m) => `<button class="btn choice ${s.birthMonth === m ? 'on' : ''}" data-act="month" data-m="${m}">${m}월</button>`)
-        .join('');
-      body = `<h1 class="q">몇 월에 태어났어?</h1><div class="grid-3">${months}</div>`;
+        ${s.err ? `<p class="hint err">${s.err}</p>` : ''}
+        <button class="btn primary big" data-act="birthNext">다음</button>`;
     } else {
       body = `<h1 class="q">성별을 골라 줘</h1>
         <div class="stack">
@@ -147,31 +179,36 @@ const onboarding = {
     return `${top}<main class="screen">${body}</main>`;
   },
   mount(s) {
-    const input = document.getElementById('name');
-    if (input) {
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') onboarding.acts.nameNext(s);
-      });
-    }
+    const enter = (id, fn) => document.getElementById(id)?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') fn(s);
+    });
+    enter('name', onboarding.acts.nameNext);
+    enter('birthMonth', onboarding.acts.birthNext);
   },
   acts: {
-    prev(s) { s.step -= 1; render(); },
-    next(s) { s.step += 1; render(); },
+    prev(s) { s.step -= 1; s.err = ''; render(); },
     nameNext(s) {
       const v = document.getElementById('name').value.trim();
       if (!v) { document.getElementById('name').focus(); return; }
       s.userName = v; s.step = 2; render();
     },
-    year(s, d) {
-      s.birthYear = Math.min(thisYear, Math.max(1930, s.birthYear + Number(d.d)));
+    birthNext(s) {
+      const y = readNumber('birthYear');
+      const m = readNumber('birthMonth');
+      s.birthYear = y;
+      s.birthMonth = m;
+      if (!y || y < 1930 || y > thisYear) { s.err = '태어난 해를 4자리 숫자로 적어 줘. 예: 2016'; render(); return; }
+      if (!m || m < 1 || m > 12 || !Number.isInteger(m)) { s.err = '태어난 달을 1~12 사이 숫자로 적어 줘.'; render(); return; }
+      s.err = '';
+      s.step = 3;
       render();
     },
-    month(s, d) { s.birthMonth = Number(d.m); s.step = 4; render(); },
     sex(s, d) {
       const data = getData();
       data.profile = { name: s.userName, birthYear: s.birthYear, birthMonth: s.birthMonth, sex: d.v, baseline: null };
       save();
-      celebrate(`반가워, ${s.userName}!`, '오늘 먹은 것부터 기록해 볼까?');
+      go({ name: 'home' });
+      toast(`반가워, ${s.userName}!`, '오늘 먹은 것부터 기록해 볼까?');
     },
   },
 };
@@ -184,6 +221,35 @@ function bodyCardDue() {
   if (new Date().getDay() !== BODY_DAY) return false;
   if (data.bodySkip === today) return false;
   return !data.body.some((b) => b.date === today);
+}
+
+// 연속 기록 진척: 오늘까지 최근 7일 칸과 다음 목표까지의 막대
+function streakCard(data, st, act) {
+  const today = todayKey();
+  const names = ['일', '월', '화', '수', '목', '금', '토'];
+  const cells = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - 6 + i);
+    const k = dateKey(d);
+    const done = hasMeal(data.days[k]);
+    const cls = [done ? 'done' : '', k === today ? 'today' : ''].join(' ');
+    return `<span class="wk-cell ${cls}"><small>${names[d.getDay()]}</small><i>${done ? '🔥' : ''}</i></span>`;
+  }).join('');
+  const next = STREAK_MILESTONES.find((m) => m > st.streak) || st.streak + 10;
+  const prev = [...STREAK_MILESTONES].reverse().find((m) => m <= st.streak) || 0;
+  const pct = ((st.streak - prev) / (next - prev)) * 100;
+  const tag = act ? 'button' : 'div';
+  return `<${tag} class="card streak-home" ${act ? `data-act="${act}" aria-label="연속 기록과 뱃지 보기"` : ''}>
+      <div class="streak-top">
+        <span class="streak-num ${st.todayDone ? 'lit' : ''}">🔥 <b>${st.streak}</b>일 연속</span>
+        <span class="pill">🏅 <b>${Object.keys(data.badges || {}).length}</b></span>
+      </div>
+      <div class="wk-strip">${cells}</div>
+      <div class="milestone">
+        <div class="progress soft"><div class="progress-fill" style="width:${pct}%"></div></div>
+        <span>${next}일 연속까지 ${next - st.streak}일</span>
+      </div>
+    </${tag}>`;
 }
 
 const home = {
@@ -204,15 +270,17 @@ const home = {
     const st = streakInfo(data, todayKey());
     const y = new Date();
     y.setDate(y.getDate() - 1);
-    const frozeYesterday = st.frozenDays.has(dateKey(y));
+    const yDay = data.days[dateKey(y)];
+    const yesterdayCard = (hasMeal(yDay) || (yDay?.exercises || []).length) && !yDay.closed
+      ? `<button class="card yesterday-card" data-act="closeYesterday">
+          <span class="card-emoji">🌙</span>
+          <span class="card-title">어제 결과를 아직 안 봤어요</span>
+          <span class="card-sub">어제 하루를 마감하고 결과 보기</span>
+        </button>`
+      : '';
     const tasks = ['breakfast', 'lunch', 'dinner'].map((m) => (day.meals[m] || []).length > 0).concat(minutes > 0);
     const doneCount = tasks.filter(Boolean).length;
-    const statusRow = `<button class="streak-row" data-act="badges" aria-label="스트릭과 뱃지 보기">
-        <span class="pill ${st.todayDone ? 'lit' : ''}">🔥 <b>${st.streak}</b>일 연속</span>
-        <span class="pill">🧊 프리즈 <b>${st.freeze}</b></span>
-        <span class="pill">🏅 <b>${Object.keys(data.badges || {}).length}</b></span>
-      </button>
-      ${frozeYesterday ? '<p class="freeze-note">어제는 🧊 프리즈가 스트릭을 지켜 줬어요!</p>' : ''}
+    const statusRow = `${streakCard(data, st, 'badges')}
       <div class="today-progress">
         <div class="progress soft"><div class="progress-fill" style="width:${(doneCount / tasks.length) * 100}%"></div></div>
         <span>오늘 ${doneCount}/${tasks.length}</span>
@@ -244,6 +312,7 @@ const home = {
       <main class="screen home">
         <p class="date">${prettyDate()}</p>
         <h1 class="hello">${h(data.profile.name)}, 오늘 뭐 먹었어?</h1>
+        ${yesterdayCard}
         ${statusRow}
         ${bodyCard}
         ${reviewCard}
@@ -265,9 +334,13 @@ const home = {
     exercise() { go({ name: 'exercise', step: 1 }); },
     close() {
       const day = getDay(todayKey());
-      day.closed = true;
-      save();
-      go({ name: 'result', key: todayKey() });
+      if (day.closed) go({ name: 'result', key: todayKey() });
+      else closeDay(todayKey());
+    },
+    closeYesterday() {
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      closeDay(dateKey(y));
     },
     settings() { go({ name: 'settings' }); },
     badges() { go({ name: 'badges' }); },
@@ -278,9 +351,7 @@ const home = {
     },
     body() {
       const last = [...getData().body].reverse();
-      const w = last.find((b) => b.weight)?.weight ?? BODY_START.weight;
-      const ht = last.find((b) => b.height)?.height ?? BODY_START.height;
-      go({ name: 'body', step: 1, weight: w, height: ht });
+      go({ name: 'body', weight: last.find((b) => b.weight)?.weight ?? null, height: last.find((b) => b.height)?.height ?? null });
     },
     bodySkip() {
       getData().bodySkip = todayKey();
@@ -300,7 +371,7 @@ function tagsFor(mealId, items) {
     .filter((id) => !recent.includes(id))
     .sort((a, b) => use[b].count - use[a].count)
     .slice(0, FREQUENT_TAG_COUNT);
-  const starter = recent.length ? [] : STARTER_TAGS[mealId].filter((id) => findMenu(id));
+  const starter = STARTER_TAGS[mealId].filter((id) => findMenu(id) && !recent.includes(id) && !frequent.includes(id));
   return { recent, frequent, starter };
 }
 
@@ -351,14 +422,13 @@ const meal = {
         <h1 class="q">${m.label}에 뭐 먹었어?</h1>
         ${section('최근에 먹은 메뉴', recent)}
         ${section('자주 먹은 메뉴', frequent)}
-        ${section('이런 메뉴 있어요', starter)}
+        ${section('추천 메뉴', starter)}
         <div class="search">
           <input id="search" class="text-input" type="search" autocomplete="off" placeholder="🔍 메뉴 찾기" value="${h(s.query)}">
           <div id="results">${searchResultsHtml(s)}</div>
         </div>
         <h2 class="sub">담은 메뉴</h2>
         <div class="cart">${cartHtml(s)}</div>
-        <div class="bottom-space"></div>
       </main>
       <footer class="bottom-bar">
         <button class="btn primary big" data-act="save" ${canSave ? '' : 'disabled'}>저장하기</button>
@@ -424,7 +494,7 @@ const meal = {
         const st = streakInfo(data, todayKey()).streak;
         sub = st >= 2 ? `🔥 ${st}일 연속 기록! 계속 이어 가 보자.` : '🔥 오늘 기록 시작! 내일도 이어 가 보자.';
       }
-      celebrate(`${label} 기록 완료!`, sub);
+      saved(`${label} 기록 완료!`, sub);
     },
   },
 };
@@ -517,54 +587,39 @@ const exercise = {
     minutes(s, d) {
       getDay(todayKey()).exercises.push({ intensity: s.intensity, minutes: Number(d.m), at: Date.now() });
       save();
-      celebrate('운동 기록 완료!', `${d.m}분 동안 움직였어요. 멋져!`);
+      saved('운동 기록 완료!', `${d.m}분 동안 움직였어요. 멋져!`);
     },
   },
 };
 
 // ---------- 체중과 키 ----------
 
-function bodyStepper(value, unit) {
-  return `<div class="stepper">
-    <button class="btn step-btn" data-act="adj" data-d="-1">−1</button>
-    <button class="btn step-btn" data-act="adj" data-d="-0.1">−0.1</button>
-    <div class="step-value">${value.toFixed(1)}<small>${unit}</small></div>
-    <button class="btn step-btn" data-act="adj" data-d="0.1">+0.1</button>
-    <button class="btn step-btn" data-act="adj" data-d="1">+1</button>
-  </div>`;
-}
-
 const body = {
   html(s) {
-    if (s.step === 1) {
-      return `${topBar({ step: 1, total: 2 })}
-        <main class="screen">
-          <h1 class="q">체중을 맞춰 줘</h1>
-          ${bodyStepper(s.weight, 'kg')}
-          <button class="btn primary big" data-act="next">다음</button>
-        </main>`;
-    }
-    return `${topBar({ step: 2, total: 2 })}
+    return `${topBar({ title: '📏 몸 기록' })}
       <main class="screen">
-        <h1 class="q">키를 맞춰 줘</h1>
-        ${bodyStepper(s.height, 'cm')}
+        <h1 class="q">체중과 키를 적어 줘</h1>
+        <div class="num-stack">
+          <p class="num-label">체중</p>
+          ${numberField('weight', s.weight, 'kg', { decimal: true, placeholder: '예: 36.5' })}
+          <p class="num-label">키 <small>(모르면 비워 둬도 돼요)</small></p>
+          ${numberField('height', s.height, 'cm', { decimal: true, placeholder: '예: 141.2' })}
+        </div>
+        ${s.err ? `<p class="hint err">${s.err}</p>` : ''}
         <button class="btn primary big" data-act="save">저장하기</button>
-        <button class="btn ghost big" data-act="saveNoHeight">키는 이번엔 건너뛰기</button>
       </main>`;
   },
   acts: {
-    back(s) {
-      if (s.step === 2) { s.step = 1; render(); } else goHome();
+    back: () => goHome(),
+    save(s) {
+      const w = readNumber('weight');
+      const ht = readNumber('height');
+      s.weight = w;
+      s.height = ht;
+      if (!w || w < 10 || w > 200) { s.err = '체중을 kg 숫자로 적어 줘. 예: 36.5'; render(); return; }
+      if (ht !== null && (ht < 50 || ht > 230)) { s.err = '키를 cm 숫자로 적어 줘. 예: 141.2'; render(); return; }
+      saveBody(Math.round(w * 10) / 10, ht === null ? null : Math.round(ht * 10) / 10);
     },
-    adj(s, d) {
-      const key = s.step === 1 ? 'weight' : 'height';
-      const [min, max] = s.step === 1 ? [10, 200] : [80, 220];
-      s[key] = Math.min(max, Math.max(min, Math.round((s[key] + Number(d.d)) * 10) / 10));
-      render();
-    },
-    next(s) { s.step = 2; render(); },
-    save(s) { saveBody(s.weight, s.height); },
-    saveNoHeight(s) { saveBody(s.weight, null); },
   },
 };
 
@@ -575,22 +630,47 @@ function saveBody(weight, height) {
   data.body.push({ date: today, weight, height });
   data.body.sort((a, b) => a.date.localeCompare(b.date));
   save();
-  celebrate('몸 기록 완료!', '다음 주 일요일에 또 만나요.');
+  saved('몸 기록 완료!', '다음 주 일요일에 또 만나요.');
 }
 
-// ---------- 축하 ----------
+// ---------- 저장 알림과 마감 축하 ----------
 
-// 저장할 때마다 부른다: 새 뱃지를 확인하고, 효과음을 내고, 축하 화면을 띄운다
-function celebrate(title, sub) {
+function soundOn() {
+  return getData().settings?.sound !== false;
+}
+
+// 기록을 저장할 때: 새 뱃지를 확인하고, 홈으로 돌아가 아래쪽에 짧은 알림을 띄운다
+function saved(title, sub) {
   const data = getData();
   const badges = data.profile ? awardBadges(data, todayKey()) : [];
   save();
   if (soundOn()) playCheer(badges.length > 0);
-  go({ name: 'celebrate', title, sub, badges: badges.map((b) => b.id) });
+  goHome();
+  toast(title, sub, badges);
 }
 
-function soundOn() {
-  return getData().settings?.sound !== false;
+let toastTimer = null;
+
+function toast(title, sub, badges = []) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  clearTimeout(toastTimer);
+  el.innerHTML = `<b>✓ ${h(title)}</b>${sub ? `<span>${h(sub)}</span>` : ''}
+    ${badges.map((b) => `<span class="toast-badge">${b.emoji} 새 뱃지: <b>${h(b.name)}</b></span>`).join('')}`;
+  el.classList.add('show');
+  toastTimer = setTimeout(() => el.classList.remove('show'), badges.length ? 4500 : 2600);
+}
+
+document.getElementById('toast')?.addEventListener('click', (e) => e.currentTarget.classList.remove('show'));
+
+// 하루를 마감할 때만 색종이 축하를 보여 주고, 이어서 결과 카드로 간다
+function closeDay(key) {
+  const data = getData();
+  getDay(key).closed = true;
+  const badges = awardBadges(data, todayKey());
+  save();
+  if (soundOn()) playCheer(true);
+  go({ name: 'celebrate', key, badges: badges.map((b) => b.id) });
 }
 
 const celebrateView = {
@@ -602,27 +682,27 @@ const celebrateView = {
       const rot = (i * 53) % 360;
       return `<i style="left:${left}%;animation-delay:${delay}s;background:${colors[i % 4]};transform:rotate(${rot}deg)"></i>`;
     }).join('');
+    const word = s.key === todayKey() ? '오늘' : prettyDate(parseKey(s.key)).replace(/ \S+요일$/, '');
     return `<main class="screen celebrate" data-act="done">
         <div class="confetti" aria-hidden="true">${bits}</div>
-        <div class="badge-pop">✓</div>
-        <h1 class="q">${h(s.title)}</h1>
-        <p class="celebrate-sub">${h(s.sub)}</p>
+        <div class="badge-pop">🎉</div>
+        <h1 class="q">${h(word)} 하루 마감!</h1>
+        <p class="celebrate-sub">하루 동안 기록하느라 수고했어. 결과를 보러 가자!</p>
         ${s.badges.length ? `<div class="new-badges">
           <p class="new-badges-title">새 뱃지를 받았어!</p>
           ${s.badges.map((id) => BADGES.find((b) => b.id === id)).map((b) => `<div class="badge-chip"><span>${b.emoji}</span><b>${b.name}</b></div>`).join('')}
         </div>` : ''}
-        <button class="btn primary big" data-act="done">확인</button>
+        <button class="btn primary big" data-act="done">결과 보기</button>
       </main>`;
   },
   mount(s) {
-    // 뱃지를 받은 날은 천천히 볼 수 있게 저절로 닫지 않는다
-    if (!s.badges.length) celebrateTimer = setTimeout(() => celebrateView.acts.done(), CELEBRATE_MS);
+    // 뱃지를 받은 날은 천천히 볼 수 있게 저절로 넘어가지 않는다
+    if (!s.badges.length) celebrateTimer = setTimeout(() => celebrateView.acts.done(s), CELEBRATE_MS + 600);
   },
   acts: {
-    done() {
+    done(s) {
       clearTimeout(celebrateTimer);
-      if (history.state && history.state.inner) history.back();
-      else go({ name: 'home' });
+      go({ name: 'result', key: s.key });
     },
   },
 };
@@ -666,7 +746,7 @@ const result = {
     const dayWord = isToday ? '오늘' : '이 날';
     return `${topBar({ title })}
       <main class="screen result">
-        <div class="bubble">${h(pickPhrase(r, s.key))}</div>
+        <div class="bubble">${h(isToday ? pickPhrase(r, s.key) : pickPhrase(r, s.key).replace(/오늘/g, '이 날'))}</div>
         <section class="card result-card">
           <div class="r-row"><span>🍽️ 먹은 에너지</span><b>${fmt(r.intake)} kcal</b></div>
           <div class="r-row"><span>🏃 움직여서 쓴 에너지</span><b>${fmt(r.burned)} kcal</b></div>
@@ -699,7 +779,6 @@ function calendarGrid(s) {
   const lead = (first.getDay() - WEEK_START + 7) % 7;
   const today = todayKey();
   const bodyDates = new Set(data.body.map((b) => b.date));
-  const frozen = streakInfo(data, today).frozenDays;
   const names = ['일', '월', '화', '수', '목', '금', '토'];
   let cells = '';
   for (let i = 0; i < 7; i += 1) cells += `<div class="cal-head">${names[(WEEK_START + i) % 7]}</div>`;
@@ -713,10 +792,26 @@ function calendarGrid(s) {
     cells += `<button class="cal-day ${key === today ? 'today' : ''}" data-act="day" data-key="${key}" ${future ? 'disabled' : ''}
         aria-label="${s.month + 1}월 ${d}일${meal ? ', 식사 기록' : ''}${ex ? ', 운동 기록' : ''}${bodyDates.has(key) ? ', 체중 기록' : ''}">
       <span class="cal-num">${d}${bodyDates.has(key) ? '<i class="cal-dot"></i>' : ''}</span>
-      <span class="cal-icons">${meal ? '🍚' : ''}${ex ? '🏃' : ''}${frozen.has(key) ? '🧊' : ''}</span>
+      <span class="cal-icons">${meal ? '🍚' : ''}${ex ? '🏃' : ''}</span>
     </button>`;
   }
   return cells;
+}
+
+function monthSection(s) {
+  const days = monthDaily(getData(), s.year, s.month);
+  if (!days.some((d) => d.intake !== null || d.minutes)) return '';
+  let detail = '날짜를 누르면 그날 값이 보여요.';
+  const d = s.mday !== null && s.mday !== undefined ? days[s.mday] : null;
+  if (d) {
+    detail = `<b>${s.month + 1}/${d.day}</b> · 먹은 에너지 ${d.intake === null ? '기록 없음' : `${fmt(d.intake)} kcal`}
+      · 운동 ${d.minutes ? `${d.minutes}분` : '없음'}`;
+  }
+  return `<section class="card chart-card">
+    <div class="card-title">${s.month + 1}월 식사·운동</div>
+    <p class="week-detail">${detail}</p>
+    ${monthCharts(days, s.mday ?? null)}
+  </section>`;
 }
 
 function weeklySection(s) {
@@ -818,7 +913,8 @@ const calendar = {
           <button class="icon-btn" data-act="month" data-d="1" aria-label="다음 달" ${isCurrent ? 'disabled' : ''}>›</button>
         </div>
         <section class="card cal-card"><div class="cal-grid">${calendarGrid(s)}</div>
-          <p class="cal-legend">🍚 식사 · 🏃 운동 · 🧊 프리즈 · <i class="cal-dot"></i> 체중</p></section>
+          <p class="cal-legend">🍚 식사 · 🏃 운동 · <i class="cal-dot"></i> 체중</p></section>
+        ${monthSection(s)}
         <button class="btn big" data-act="summary">📋 ${s.month + 1}월 요약 보기</button>
         ${weeklySection(s)}
         ${reviewSection(s)}
@@ -828,7 +924,13 @@ const calendar = {
   mount() { fillBmi(); },
   acts: {
     back: () => goHome(),
+    mday(s, d) {
+      const i = Number(d.idx);
+      s.mday = s.mday === i ? null : i;
+      keepScroll(render);
+    },
     month(s, d) {
+      s.mday = null;
       const dt = new Date(s.year, s.month + Number(d.d), 1);
       s.year = dt.getFullYear();
       s.month = dt.getMonth();
@@ -838,9 +940,7 @@ const calendar = {
     week(s, d) {
       const i = Number(d.idx);
       s.week = s.week === i ? null : i;
-      const y = window.scrollY;
-      render();
-      window.scrollTo(0, y);
+      keepScroll(render);
     },
     summary(s) { go({ name: 'summary', year: s.year, month: s.month, from: s }); },
     review(s, d) { go({ name: 'review', key: d.key, from: s }); },
@@ -938,7 +1038,26 @@ const summary = {
   acts: { back(s) { go(s.from); } },
 };
 
-// ---------- 스트릭과 뱃지 ----------
+// ---------- 연속 기록과 뱃지 ----------
+
+const GRID_WEEKS = 5;
+
+// 최근 몇 주를 한 줄에 한 주씩 칸으로 보여준다
+function recordGrid(data) {
+  const today = todayKey();
+  const start = parseKey(weekStartKeyOf(new Date()));
+  start.setDate(start.getDate() - 7 * (GRID_WEEKS - 1));
+  const names = ['일', '월', '화', '수', '목', '금', '토'];
+  let cells = names.map((n, i) => `<span class="rg-head">${names[(WEEK_START + i) % 7]}</span>`).join('');
+  for (let i = 0; i < GRID_WEEKS * 7; i += 1) {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i);
+    const k = dateKey(d);
+    const cls = k > today ? 'future' : hasMeal(data.days[k]) ? 'done' : '';
+    cells += `<span class="rg-cell ${cls} ${k === today ? 'today' : ''}" title="${d.getMonth() + 1}/${d.getDate()}">${d.getDate()}</span>`;
+  }
+  return `<div class="record-grid">${cells}</div>`;
+}
 
 const badgesView = {
   html() {
@@ -954,15 +1073,14 @@ const badgesView = {
         <small>${when ? `${m}월 ${d}일에 받았어요` : b.desc}</small>
       </div>`;
     }).join('');
-    return `${topBar({ title: '스트릭과 뱃지' })}
+    return `${topBar({ title: '연속 기록과 뱃지' })}
       <main class="screen">
-        <section class="card streak-card">
-          <div class="streak-big">🔥 ${st.streak}<small>일 연속</small></div>
-          <p class="card-sub wrap">하루에 식사를 한 번이라도 기록하면 이어져요. 가장 길게 이어 간 기록은 ${st.best}일이에요.</p>
-          <div class="freeze-box">
-            <span class="badge-emoji">🧊</span>
-            <p>프리즈 <b>${st.freeze}개</b>. 기록을 하루 빠뜨리면 저절로 쓰여서 스트릭을 지켜 줘요. 다 쓰면 ${FREEZE_REFILL_DAYS}일 연속 기록할 때 다시 채워져요.</p>
-          </div>
+        ${streakCard(data, st, null)}
+        <p class="hint">하루에 식사를 한 번이라도 기록하면 이어져요. 가장 길게 이어 간 기록은 ${st.best}일이에요.</p>
+        <section class="card chart-card">
+          <div class="card-title">최근 ${GRID_WEEKS}주 기록</div>
+          ${recordGrid(data)}
+          <p class="r-note">초록 칸은 식사를 기록한 날이에요.</p>
         </section>
         <h2 class="sub">뱃지 ${Object.keys(got).length} / ${BADGES.length}</h2>
         <div class="badge-grid">${cards}</div>
@@ -1066,5 +1184,5 @@ const VIEWS = { onboarding, home, meal, newMenu, exercise, body, result, setting
 if (getData().profile) {
   go({ name: 'home' });
 } else {
-  go({ name: 'onboarding', step: 1, userName: '', birthYear: thisYear - 10, birthMonth: null });
+  go({ name: 'onboarding', step: 1, userName: '', birthYear: null, birthMonth: null });
 }

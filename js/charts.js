@@ -165,3 +165,57 @@ export function bmiChart(table, points, nowMonths) {
   });
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="BMI 성장도표와 내 위치">${svg}</svg>`;
 }
+
+// 한 달 식사·운동: 같은 날짜 칸에 맞춘 선 그래프 두 개 (단위가 달라 축 하나에 겹치지 않는다)
+// days: [{ day, intake: kcal | null, minutes: 분 | null }]  null은 기록 없음(또는 아직 오지 않은 날)
+export function monthCharts(days, selected) {
+  const n = days.length;
+  const plotW = W - PAD_L - PAD_R;
+  const band = plotW / n;
+  const cx = (i) => PAD_L + band * i + band / 2;
+
+  function panel({ H, values, color, unit, labelEvery, showX }) {
+    const top = 10;
+    const bot = H - (showX ? 26 : 8);
+    const vals = values.filter((v) => v !== null);
+    const t = ticks(0, Math.max(1, ...vals), 3);
+    const y = (v) => bot - (v / t[t.length - 1]) * (bot - top);
+    let svg = '';
+    for (const v of t) {
+      svg += `<line x1="${PAD_L}" x2="${W - PAD_R}" y1="${y(v)}" y2="${y(v)}" stroke="${COLORS.grid}" stroke-width="1"/>`;
+      svg += `<text x="${PAD_L - 6}" y="${y(v) + 4}" text-anchor="end" class="tick">${fmt(v)}</text>`;
+    }
+    // 기록이 이어진 날끼리만 선으로 잇는다
+    let seg = [];
+    const flush = () => {
+      if (seg.length > 1) svg += `<polyline points="${seg.join(' ')}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+      seg = [];
+    };
+    values.forEach((v, i) => {
+      if (v === null) { flush(); return; }
+      seg.push(`${cx(i)},${y(v)}`);
+    });
+    flush();
+    values.forEach((v, i) => {
+      if (v === null) return;
+      const r = selected === i ? 5 : 3;
+      svg += `<circle cx="${cx(i)}" cy="${y(v)}" r="${r}" fill="${color}" stroke="${COLORS.surface}" stroke-width="${selected === i ? 2 : 1}"/>`;
+    });
+    if (selected !== null && selected !== undefined) {
+      svg = `<line x1="${cx(selected)}" x2="${cx(selected)}" y1="${top}" y2="${bot}" stroke="${COLORS.axis}" stroke-width="1"/>` + svg;
+    }
+    if (showX) {
+      days.forEach((d, i) => {
+        if (d.day === 1 || d.day % labelEvery === 0) svg += `<text x="${cx(i)}" y="${H - 8}" text-anchor="middle" class="tick">${d.day}</text>`;
+      });
+    }
+    const hit = days.map((d, i) => `<rect x="${PAD_L + band * i}" y="0" width="${band}" height="${H}" fill="transparent" data-act="mday" data-idx="${i}"/>`).join('');
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${unit}">${svg}${hit}</svg>`;
+  }
+
+  return `
+    <div class="chart-label"><span class="key line meal"></span>먹은 에너지 (kcal)</div>
+    ${panel({ H: 120, values: days.map((d) => d.intake), color: COLORS.bar, unit: '날짜별 먹은 에너지 선 그래프', labelEvery: 5, showX: false })}
+    <div class="chart-label"><span class="key line"></span>운동 (분)</div>
+    ${panel({ H: 120, values: days.map((d) => d.minutes), color: COLORS.line, unit: '날짜별 운동 시간 선 그래프', labelEvery: 5, showX: true })}`;
+}
