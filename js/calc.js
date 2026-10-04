@@ -97,5 +97,7 @@ export function dayResult(data, key) {
     meals: mealsRecorded(day),
     streak: streakInfo(data, key).streak,
     weightMeasured: weight.measured,
+    hardWorkout: (day?.exercises || []).some((x) => x.intensity === 'hard' || x.intensity === 'veryhard'),
+    firstDay: hasMeal(day) && !Object.keys(data.days).some((k) => k < key && hasMeal(data.days[k])),
   };
 }

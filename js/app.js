@@ -12,6 +12,7 @@ import { pickPhrase, nextGreeting } from './phrases.js';
 import { streakInfo } from './streak.js';
 import { BADGES, awardBadges } from './badges.js';
 import { playCheer } from './sound.js';
+import { APP_VERSION, refreshApp } from './version.js';
 import { WEEKS_FOR_GRAPH, GRAPH_WEEKS, REVIEW_MIN_DAYS } from './config.js';
 import { BASE_MENUS, STARTER_TAGS } from './menus.js';
 import { getData, getDay, save } from './storage.js';
@@ -1161,6 +1162,12 @@ const settings = {
             <button class="seg-btn ${soundOn() ? '' : 'on'}" data-act="sound" data-v="0">🔕 끄기</button>
           </div>
         </section>
+        <section class="card settings-card">
+          <div class="card-title">앱 버전</div>
+          <p class="card-sub wrap">지금 버전: ${APP_VERSION}. 홈 화면 아이콘으로 쓸 때는 이 버튼으로 새 버전을 받아요. 기록은 그대로 남아요.</p>
+          <button class="btn primary" data-act="update" ${s.updating ? 'disabled' : ''}>${s.updating ? '받아 오는 중…' : '🔄 최신 버전 가져오기'}</button>
+          ${s.updateMsg ? `<p class="hint left">${h(s.updateMsg)}</p>` : ''}
+        </section>
       </main>`;
   },
   acts: {
@@ -1171,6 +1178,17 @@ const settings = {
       p.baseline = next === recommendedBaseline(p) ? null : next;
       save();
       render();
+    },
+    async update(s) {
+      s.updating = true;
+      s.updateMsg = '';
+      render();
+      const r = await refreshApp();
+      if (!r.ok) {
+        s.updating = false;
+        s.updateMsg = '인터넷에 연결되어 있는지 확인하고 다시 눌러 주세요.';
+        if (screen === s) render();
+      }
     },
     saveKey(s) {
       const v = document.getElementById('apikey').value.trim();
@@ -1209,6 +1227,19 @@ const settings = {
 const VIEWS = { onboarding, home, meal, newMenu, exercise, body, result, settings, calendar, summary, review, badges: badgesView, celebrate: celebrateView };
 
 // ---------- 시작 ----------
+
+try {
+  const up = JSON.parse(sessionStorage.getItem('meogeobara.updated') || 'null');
+  if (up) {
+    sessionStorage.removeItem('meogeobara.updated');
+    setTimeout(() => toast(
+      up.to && up.to !== up.from ? '새 버전으로 바꿨어요!' : '이미 최신 버전이에요',
+      `지금 버전: ${APP_VERSION}`,
+    ), 300);
+  }
+} catch (e) {
+  // 알림을 못 띄워도 앱은 그대로 동작한다
+}
 
 if (getData().profile) {
   go({ name: 'home' });

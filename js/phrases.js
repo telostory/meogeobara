@@ -5,13 +5,57 @@
 import { LOW_INTAKE_RATIO } from './config.js';
 
 export const PHRASES = {
-  vegFruit: [
-    '채소나 과일을 챙겨 먹었네. 멋진 선택이야!',
-    '오늘 식탁이 알록달록했어!',
-    '알록달록 챙겨 먹다니, 오늘 정말 꼼꼼했어.',
-    '접시에 여러 가지 색이 있었네. 근사해!',
-    '알록달록 먹은 날! 몸이 여러 가지 영양을 받았어.',
+  // 섭취가 기준선의 70%보다 적은 날: 칭찬 대신 더 먹자는 문구
+  eatMore: [
+    '오늘은 먹은 게 조금 적었네. 내일은 든든하게 챙겨 먹자!',
+    '몸이 힘을 내려면 에너지가 필요해. 간식이나 한 끼 더 챙겨 볼까?',
+    '오늘은 에너지가 조금 모자랐어. 맛있는 거 더 먹자!',
+    '빠뜨린 메뉴가 있으면 더 적어 줘. 먹은 건 다 소중해!',
+    '배가 고프면 참지 말고 맛있게 먹자. 그게 힘이 돼!',
+    '내일은 아침부터 든든하게 시작해 볼까?',
+    '혹시 적는 걸 깜빡한 끼니가 있니? 생각나면 더 적어 줘!',
   ],
+  // 채소·과일·단백질·유제품을 모두 먹은 날
+  allGroups: [
+    '채소, 과일, 단백질, 유제품까지 네 가지를 다 먹었어! 완벽한 조합이야.',
+    '오늘 식품군 네 칸이 모두 채워졌어. 대단해!',
+    '골고루 먹기 챔피언! 네 가지를 모두 챙겼네.',
+    '오늘 식탁은 무지개 같았어. 정말 멋져!',
+    '네 가지 식품군을 다 만난 날! 몸이 아주 신났겠다.',
+  ],
+  // 채소와 과일을 둘 다 먹은 날
+  vegAndFruit: [
+    '채소랑 과일을 둘 다 챙겼네. 멋진 선택이야!',
+    '오늘 식탁이 알록달록했어!',
+    '초록 채소에 달콤한 과일까지, 오늘 정말 꼼꼼했어.',
+    '접시에 여러 가지 색이 있었네. 근사해!',
+    '채소와 과일 둘 다 성공! 몸이 여러 가지 영양을 받았어.',
+  ],
+  // 채소만 먹은 날
+  vegOnly: [
+    '오늘 채소를 챙겨 먹었네. 아삭아삭 멋져!',
+    '초록 친구를 만난 날! 잘했어.',
+    '채소 한 가지가 식탁을 더 알록달록하게 해 줬어.',
+    '채소까지 챙기다니 대단해. 내일은 과일도 만나 볼까?',
+    '오늘 채소 칸이 채워졌어. 최고야!',
+  ],
+  // 과일만 먹은 날
+  fruitOnly: [
+    '오늘 과일을 챙겨 먹었네. 상큼하다!',
+    '달콤한 과일을 만난 날! 잘했어.',
+    '과일 덕분에 오늘 식탁이 더 알록달록해졌어.',
+    '과일까지 챙기다니 멋져. 내일은 채소도 만나 볼까?',
+    '오늘 과일 칸이 채워졌어. 최고야!',
+  ],
+  // 단백질과 유제품을 둘 다 먹은 날
+  proteinDairy: [
+    '단백질이랑 유제품을 둘 다 챙겼네. 튼튼해지는 하루야!',
+    '달걀, 고기, 우유 같은 친구들을 만난 날! 잘했어.',
+    '오늘 단백질과 유제품 칸이 모두 채워졌어.',
+    '힘이 쑥쑥 나는 메뉴를 골랐네. 멋져!',
+    '단백질에 유제품까지, 든든한 하루였어.',
+  ],
+  // 60분 넘게 움직인 날
   active60: [
     '60분이나 움직였어! 몸이 신났겠다.',
     '오늘 정말 많이 움직였네. 대단해!',
@@ -19,31 +63,118 @@ export const PHRASES = {
     '땀 흘린 만큼 오늘 밤 꿀잠 자자!',
     '60분 운동 성공! 내일도 즐겁게 움직여 보자.',
   ],
+  // 30~59분 움직인 날
+  active30: [
+    '30분 넘게 움직였네. 멋진 하루야!',
+    '오늘도 몸을 신나게 움직였어. 잘했어!',
+    '움직인 만큼 기분도 좋아졌지?',
+    '30분 운동 성공! 꾸준히 하면 더 즐거워져.',
+    '오늘 움직인 시간이 쌓이고 있어. 최고야!',
+  ],
+  // 30분보다 짧게 움직인 날
+  activeShort: [
+    '짧게라도 움직였네. 그것도 정말 멋져!',
+    '10분도 운동이야! 오늘도 한 걸음 했어.',
+    '조금씩 움직이는 게 제일 중요해. 잘했어!',
+    '오늘 몸을 깨웠네. 내일은 10분만 더 해 볼까?',
+    '움직인 기록이 생겼어. 멋진 시작이야!',
+  ],
+  // 조금 지침·힘듦 강도로 운동한 날
+  hardWorkout: [
+    '숨이 찰 만큼 열심히 했네. 정말 대단해!',
+    '힘든 운동도 해냈어! 물 많이 마시자.',
+    '땀이 날 만큼 움직인 날! 오늘은 푹 쉬어.',
+    '힘든 걸 끝까지 해내다니 멋져!',
+    '오늘 운동은 진짜 열심히 했다! 스트레칭도 잊지 마.',
+  ],
+  // 아침·점심·저녁을 모두 기록한 날
   threeMeals: [
     '아침, 점심, 저녁 모두 기록했어! 완벽한 하루야.',
     '세 끼를 다 적었네. 기록 대장이야!',
     '하루 세 끼 기록 성공! 꾸준함이 최고야.',
     '세 끼 모두 챙겨 먹고 기록까지 했네. 멋져!',
+    '오늘 세 끼가 모두 채워졌어. 대단해!',
   ],
+  // 아침을 기록한 날 (세 끼를 다 적지는 않은 날)
+  breakfast: [
+    '아침을 챙겨 먹었네. 힘찬 하루의 시작이야!',
+    '아침밥으로 하루를 든든하게 열었어.',
+    '아침 기록 성공! 좋은 하루였지?',
+    '아침부터 기록하다니 정말 부지런해!',
+    '아침을 먹으면 하루가 더 신나. 잘했어!',
+  ],
+  // 연속 기록 2~6일
   streak: [
     '{n}일째 기록 중! 계속 이어 가 보자.',
     '벌써 {n}일 연속이야. 대단한 끈기야!',
     '{n}일 연속 기록! 정말 꾸준하다.',
     '기록이 {n}일째 이어지고 있어. 최고야!',
+    '{n}일 연속! 내일도 이어 가면 더 멋질 거야.',
   ],
-  eatMore: [
-    '오늘은 먹은 게 조금 적었네. 내일은 든든하게 챙겨 먹자!',
-    '몸이 힘을 내려면 에너지가 필요해. 간식이나 한 끼 더 챙겨 볼까?',
-    '오늘은 에너지가 조금 모자랐어. 맛있는 거 더 먹자!',
-    '빠뜨린 메뉴가 있으면 더 적어 줘. 먹은 건 다 소중해!',
+  // 연속 기록 7~29일
+  streakWeek: [
+    '{n}일 연속 기록! 일주일을 넘겼어. 진짜 대단해!',
+    '{n}일째 이어지는 기록, 이제 습관이 됐네!',
+    '{n}일 연속이라니, 기록의 달인이야!',
+    '매일 기록하는 힘이 쑥쑥 자라고 있어. {n}일째!',
+    '{n}일 동안 하루도 안 빠졌어. 정말 멋져!',
   ],
+  // 연속 기록 30일 이상
+  streakMonth: [
+    '{n}일 연속! 한 달을 넘겼어. 놀라워!',
+    '{n}일째 기록 중이라니, 우리 집 기록 왕이야!',
+    '{n}일 동안 꾸준히 해낸 너, 정말 자랑스러워!',
+    '{n}일 연속 기록! 이건 진짜 대단한 일이야.',
+    '한 달 넘게 매일 기록했어. {n}일째, 최고야!',
+  ],
+  // 처음 기록한 날
+  firstDay: [
+    '첫 기록을 남겼어! 오늘이 시작이야.',
+    '머거바라와의 첫날! 기록해 줘서 고마워.',
+    '첫 기록 성공! 내일도 같이 해 보자.',
+    '오늘부터 기록 여행 시작! 정말 멋져.',
+    '처음인데도 잘했어. 내일도 기다릴게!',
+  ],
+  // 토·일요일
+  weekend: [
+    '주말에도 기록했네. 정말 멋져!',
+    '즐거운 주말! 기록까지 챙기다니 대단해.',
+    '주말에도 잊지 않고 기록했어. 최고야!',
+    '신나는 주말 보내고 있지? 기록 고마워!',
+    '주말 기록 성공! 푹 쉬고 또 만나.',
+  ],
+  // 위에 맞는 게 없을 때
   basic: [
     '오늘도 기록해 줘서 고마워!',
     '기록한 것만으로도 멋진 하루야.',
     '하나씩 적다 보면 내 하루가 보여. 잘하고 있어!',
     '오늘 하루도 수고했어!',
+    '내일도 같이 기록해 보자!',
   ],
 };
+
+// 그날 기록에 맞는 문구 묶음들을 고른다
+export function phraseCases(result, weekday) {
+  const g = result.groups;
+  const cases = [];
+  if (['v', 'f', 'p', 'd'].every((x) => g.has(x))) cases.push('allGroups');
+  else if (g.has('v') && g.has('f')) cases.push('vegAndFruit');
+  else if (g.has('v')) cases.push('vegOnly');
+  else if (g.has('f')) cases.push('fruitOnly');
+  if (!cases.includes('allGroups') && g.has('p') && g.has('d')) cases.push('proteinDairy');
+  if (result.minutes >= 60) cases.push('active60');
+  else if (result.minutes >= 30) cases.push('active30');
+  else if (result.minutes > 0) cases.push('activeShort');
+  if (result.hardWorkout) cases.push('hardWorkout');
+  if (['breakfast', 'lunch', 'dinner'].every((m) => result.meals.includes(m))) cases.push('threeMeals');
+  else if (result.meals.includes('breakfast')) cases.push('breakfast');
+  if (result.streak >= 30) cases.push('streakMonth');
+  else if (result.streak >= 7) cases.push('streakWeek');
+  else if (result.streak >= 2) cases.push('streak');
+  if (result.firstDay) cases.push('firstDay');
+  if (weekday === 0 || weekday === 6) cases.push('weekend');
+  return cases;
+}
 
 // 같은 날에는 같은 문구가 나오도록 날짜로 정한 무작위 수를 쓴다
 function seeded(key) {
@@ -63,13 +194,9 @@ export function pickPhrase(result, key) {
   if (result.intake < result.base * LOW_INTAKE_RATIO) {
     pool = PHRASES.eatMore;
   } else {
-    const groups = [];
-    if (result.groups.has('v') || result.groups.has('f')) groups.push('vegFruit');
-    if (result.minutes >= 60) groups.push('active60');
-    if (['breakfast', 'lunch', 'dinner'].every((m) => result.meals.includes(m))) groups.push('threeMeals');
-    if (result.streak >= 2) groups.push('streak');
-    const group = groups.length ? groups[Math.floor(rand() * groups.length)] : 'basic';
-    pool = PHRASES[group];
+    const [y, m, d] = key.split('-').map(Number);
+    const cases = phraseCases(result, new Date(y, m - 1, d).getDay());
+    pool = PHRASES[cases.length ? cases[Math.floor(rand() * cases.length)] : 'basic'];
   }
   return pool[Math.floor(rand() * pool.length)].replace('{n}', result.streak);
 }
