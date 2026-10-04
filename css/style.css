@@ -752,3 +752,82 @@ button.card:active { transform: translateY(3px); border-bottom-width: 2px; margi
 #app.typing .bottom-bar { display: none; }
 .btn.danger { color: #a8432a; font-size: 16px; margin-top: 4px; }
 .settings-card .row, .settings-card > .btn { width: 100%; }
+
+/* ---------- 마이크로 인터랙션 ---------- */
+
+/* 화면 전환: 앞으로 가면 오른쪽에서, 뒤로 가면 왼쪽에서 미끄러져 들어온다 */
+.screen.enter-fwd { animation: slideFromRight 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.screen.enter-back { animation: slideFromLeft 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes slideFromRight { from { transform: translateX(28px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes slideFromLeft { from { transform: translateX(-28px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* 화면 안의 카드와 글이 차례로 떠오른다 */
+.screen.enter-fwd:not(.celebrate) > *,
+.screen.enter-back:not(.celebrate) > * {
+  animation: rise 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 45ms + 40ms);
+}
+@keyframes rise { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* 누른 버튼이 '톡' 튄다 */
+.bump { animation: bump 0.32s cubic-bezier(0.3, 1.6, 0.5, 1); }
+.ps-dot.bump { animation: none; }
+.ps-dot.bump i { animation: dotBump 0.36s cubic-bezier(0.3, 1.8, 0.5, 1); }
+@keyframes bump { 0% { transform: scale(0.88); } 60% { transform: scale(1.07); } 100% { transform: scale(1); } }
+@keyframes dotBump { 0% { transform: scale(0.7); } 60% { transform: scale(1.25); } 100% { transform: scale(1.08); } }
+
+/* 손가락으로 누르는 순간 살짝 눌린다 */
+.tag:active, .ps-dot:active, .cal-day:active, .seg-btn:active, .pill:active { transform: scale(0.94); }
+.tag, .cal-day, .seg-btn { transition: transform 0.1s ease, background 0.15s ease, border-color 0.15s ease; }
+
+/* 홈 카드의 체크 표시가 톡 나타난다 */
+.check { animation: popCheck 0.45s cubic-bezier(0.3, 1.8, 0.5, 1) both; animation-delay: 0.25s; }
+@keyframes popCheck { from { transform: scale(0) rotate(-30deg); } to { transform: none; } }
+
+/* 진척 막대가 왼쪽부터 차오른다 */
+.screen .progress-fill { transform-origin: left center; animation: fillBar 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: 0.2s; }
+@keyframes fillBar { from { transform: scaleX(0); } to { transform: none; } }
+
+/* 최근 7일 불꽃이 하나씩 켜진다 */
+.wk-cell.done i { animation: popCheck 0.4s cubic-bezier(0.3, 1.8, 0.5, 1) both; animation-delay: calc(var(--w, 0) * 60ms + 0.25s); }
+.wk-cell.today i { animation: todayPulse 2.2s ease-in-out 1s infinite; }
+@keyframes todayPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(201, 136, 93, 0); } 50% { box-shadow: 0 0 0 6px rgba(201, 136, 93, 0.22); } }
+
+/* 결과 카드: 한마디가 말풍선처럼 톡, 먹은 식품군이 차례로 켜진다 */
+.result .bubble { animation: bubbleIn 0.5s cubic-bezier(0.3, 1.5, 0.5, 1) both; }
+@keyframes bubbleIn { from { transform: scale(0.85) translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+.group.on { animation: groupOn 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both; animation-delay: calc(var(--g, 0) * 110ms + 0.45s); }
+@keyframes groupOn { 0% { transform: scale(0.8); } 60% { transform: scale(1.08); } 100% { transform: none; } }
+
+/* 받은 뱃지에 반짝임이 한 번 지나간다 */
+.badge-card.got { position: relative; overflow: hidden; }
+.badge-card.got::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.75) 50%, transparent 70%);
+  transform: translateX(-120%);
+  animation: shine 1.1s ease 0.5s both;
+  pointer-events: none;
+}
+@keyframes shine { to { transform: translateX(120%); } }
+
+/* 저장 알림 안의 새 뱃지가 통통 */
+#toast.show .toast-badge { animation: groupOn 0.5s cubic-bezier(0.3, 1.6, 0.5, 1) 0.2s both; }
+
+/* 오늘 날짜 칸이 살짝 숨 쉰다 */
+.cal-day.today { animation: todayPulse 2.4s ease-in-out 0.8s infinite; }
+
+/* 검색 결과 태그가 하나씩 나타난다 */
+#results .tag { animation: rise 0.25s ease both; }
+#results .tag:nth-child(2) { animation-delay: 30ms; }
+#results .tag:nth-child(3) { animation-delay: 60ms; }
+#results .tag:nth-child(4) { animation-delay: 90ms; }
+#results .tag:nth-child(n+5) { animation-delay: 120ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .screen.enter-fwd, .screen.enter-back, .screen > *, .bump, .ps-dot.bump i, .check, .screen .progress-fill,
+  .wk-cell i, .result .bubble, .group.on, .badge-card.got::after, .cal-day.today, #results .tag, .cart-row.pop-in {
+    animation: none !important;
+  }
+}

@@ -11,7 +11,7 @@ import { weeklyCharts, bmiChart, monthCharts } from './charts.js';
 import { pickPhrase, nextGreeting } from './phrases.js';
 import { streakInfo } from './streak.js';
 import { BADGES, awardBadges } from './badges.js';
-import { playCheer } from './sound.js';
+import { playCheer, playSound } from './sound.js';
 import { APP_VERSION, refreshApp } from './version.js';
 import { WEEKS_FOR_GRAPH, GRAPH_WEEKS, REVIEW_MIN_DAYS } from './config.js';
 import { BASE_MENUS, STARTER_TAGS } from './menus.js';
@@ -23,6 +23,7 @@ const weekStartKeyOf = (d) => weekStartKey(d, WEEK_START);
 const app = document.getElementById('app');
 let screen = null; // 지금 보고 있는 화면 { name, ...상태 }
 let celebrateTimer = null;
+let navDir = 'fwd'; // 다음 화면 전환 방향: 'fwd' 앞으로, 'back' 뒤로
 
 // ---------- 화면 이동 ----------
 
@@ -48,6 +49,7 @@ function goHome() {
 window.addEventListener('popstate', () => {
   if (screen && screen.name !== 'home' && screen.name !== 'onboarding') {
     clearTimeout(celebrateTimer);
+    navDir = 'back';
     screen = { name: 'home' };
     render();
   }
@@ -63,11 +65,58 @@ function render() {
   app.innerHTML = view.html(screen);
   app.dataset.screen = screen.name;
   lastRendered = screen;
+  const main = app.querySelector('.screen');
   if (same) {
-    const el = app.querySelector('.screen');
-    if (el) el.scrollTop = y;
+    if (main) main.scrollTop = y;
+  } else if (main) {
+    animateEnter(main, navDir);
   }
+  navDir = 'fwd';
   if (view.mount) view.mount(screen);
+}
+
+// ---------- 움직임 ----------
+
+const reduceMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+// 새 화면이 나타날 때: 화면은 옆에서 미끄러져 들어오고, 안의 카드들은 차례로 떠오른다
+function animateEnter(main, dir) {
+  if (reduceMotion()) return;
+  main.classList.add(dir === 'back' ? 'enter-back' : 'enter-fwd');
+  [...main.children].slice(0, 12).forEach((el, i) => el.style.setProperty('--i', i));
+  main.querySelectorAll('[data-count]').forEach(countUp);
+}
+
+// 숫자가 0부터 올라가며 나타난다
+function countUp(el) {
+  const target = Number(el.dataset.count);
+  const sign = el.dataset.sign === '1';
+  const suffix = el.dataset.suffix || '';
+  const show = (v) => {
+    const r = Math.round(v);
+    const txt = Math.abs(r).toLocaleString('ko-KR');
+    el.textContent = `${sign ? (r > 0 ? '+' : r < 0 ? '−' : '') : r < 0 ? '−' : ''}${txt}${suffix}`;
+  };
+  const start = performance.now();
+  const dur = 700;
+  show(0);
+  const tick = (now) => {
+    const t = Math.min(1, (now - start) / dur);
+    show(target * (1 - (1 - t) ** 3));
+    if (t < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+// 누른 버튼이 다시 그려진 뒤에도 '톡' 튀는 느낌을 준다
+function bumpSame(dataset) {
+  if (reduceMotion()) return;
+  const sel = Object.entries(dataset).map(([k, v]) => `[data-${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${CSS.escape(v)}"]`).join('');
+  app.querySelectorAll(sel).forEach((el) => {
+    el.classList.remove('bump');
+    void el.offsetWidth;
+    el.classList.add('bump');
+  });
 }
 
 // 휴대폰 키보드가 올라와도 위쪽 막대가 화면에 붙어 있도록, 앱 크기를 실제 보이는 영역에 맞춘다
@@ -111,13 +160,26 @@ app.addEventListener('focusin', (e) => {
 });
 
 // 버튼 클릭은 data-act 하나로 모아서 처리한다
+// 고르기 버튼은 '톡' 소리를 낸다. 저장·이동처럼 따로 소리가 있거나 조용해야 하는 버튼은 뺀다.
+const QUIET_ACTS = new Set([
+  'back', 'home', 'save', 'close', 'closeYesterday', 'done', 'minutes', 'size', 'toggle', 'remove',
+  'update', 'exportData', 'importData', 'resetData', 'saveKey', 'removeKey', 'testKey', 'sound', 'retry',
+]);
+
 app.addEventListener('click', (e) => {
   const el = e.target.closest('[data-act]');
   if (!el || el.disabled) return;
   const view = VIEWS[screen.name];
-  const fn = view.acts && view.acts[el.dataset.act];
+  const act = el.dataset.act;
+  const fn = view.acts && view.acts[act];
+  if (!fn && act !== 'home') return;
+  if (soundOn() && !QUIET_ACTS.has(act)) playSound('tap');
+  navDir = act === 'back' ? 'back' : 'fwd';
+  const before = screen;
+  const dataset = { ...el.dataset };
   if (fn) fn(screen, el.dataset, el);
-  else if (el.dataset.act === 'home') goHome();
+  else goHome();
+  if (screen === before && lastRendered === before) bumpSame(dataset);
 });
 
 // ---------- 공통 조각 ----------
@@ -259,7 +321,7 @@ function streakCard(data, st, act) {
     const k = dateKey(d);
     const done = hasMeal(data.days[k]);
     const cls = [done ? 'done' : '', k === today ? 'today' : ''].join(' ');
-    return `<span class="wk-cell ${cls}"><small>${names[d.getDay()]}</small><i>${done ? '🔥' : ''}</i></span>`;
+    return `<span class="wk-cell ${cls}" style="--w:${i}"><small>${names[d.getDay()]}</small><i>${done ? '🔥' : ''}</i></span>`;
   }).join('');
   const next = STREAK_MILESTONES.find((m) => m > st.streak) || st.streak + 10;
   const prev = [...STREAK_MILESTONES].reverse().find((m) => m <= st.streak) || 0;
@@ -267,7 +329,7 @@ function streakCard(data, st, act) {
   const tag = act ? 'button' : 'div';
   return `<${tag} class="card streak-home" ${act ? `data-act="${act}" aria-label="연속 기록과 뱃지 보기"` : ''}>
       <div class="streak-top">
-        <span class="streak-num ${st.todayDone ? 'lit' : ''}">🔥 <b>${st.streak}</b>일 연속</span>
+        <span class="streak-num ${st.todayDone ? 'lit' : ''}">🔥 <b data-count="${st.streak}">${st.streak}</b>일 연속</span>
         <span class="pill">🏅 <b>${Object.keys(data.badges || {}).length}</b></span>
       </div>
       <div class="wk-strip">${cells}</div>
@@ -478,11 +540,16 @@ const meal = {
       const idx = s.items.findIndex((i) => i.menuId === d.id);
       if (idx >= 0) s.items.splice(idx, 1);
       else addItem(s, findMenu(d.id));
+      if (soundOn()) playSound(idx >= 0 ? 'remove' : 'add');
       if (s.query) s.query = '';
       render();
     },
     portion(s, d) { s.items[Number(d.idx)].portion = d.p; render(); },
-    remove(s, d) { s.items.splice(Number(d.idx), 1); render(); },
+    remove(s, d) {
+      s.items.splice(Number(d.idx), 1);
+      if (soundOn()) playSound('remove');
+      render();
+    },
     newMenu(s) {
       const menuName = s.query.trim();
       if (!hasApiKey()) {
@@ -537,6 +604,7 @@ function saveNewMenu(s, { kcal, groups, source }) {
   const ms = s.mealState;
   ms.query = '';
   addItem(ms, menu);
+  if (soundOn()) playSound('add');
   go(ms);
 }
 
@@ -608,6 +676,7 @@ const exercise = {
     intensity(s, d) { s.intensity = d.id; s.step = 2; render(); },
     remove(s, d) {
       getDay(todayKey()).exercises.splice(Number(d.idx), 1);
+      if (soundOn()) playSound('remove');
       save();
       render();
     },
@@ -765,9 +834,9 @@ const result = {
         </main>`;
     }
     const r = dayResult(data, s.key);
-    const groups = ['v', 'f', 'p', 'd'].map((g) => {
+    const groups = ['v', 'f', 'p', 'd'].map((g, gi) => {
       const on = r.groups.has(g);
-      return `<div class="group ${on ? 'on' : ''}"><span class="group-emoji">${FOOD_GROUPS[g].emoji}</span>
+      return `<div class="group ${on ? 'on' : ''}" style="--g:${gi}"><span class="group-emoji">${FOOD_GROUPS[g].emoji}</span>
         <span>${FOOD_GROUPS[g].label}</span><span class="group-mark">${on ? '✓' : ''}</span></div>`;
     }).join('');
     const dayWord = isToday ? '오늘' : '이 날';
@@ -775,10 +844,10 @@ const result = {
       <main class="screen result">
         <div class="bubble">${h(isToday ? pickPhrase(r, s.key) : pickPhrase(r, s.key).replace(/오늘/g, '이 날'))}</div>
         <section class="card result-card">
-          <div class="r-row"><span>🍽️ 먹은 에너지</span><b>${fmt(r.intake)} kcal</b></div>
-          <div class="r-row"><span>🏃 움직여서 쓴 에너지</span><b>${fmt(r.burned)} kcal</b></div>
-          <div class="r-row"><span>🔋 기본으로 쓰는 에너지</span><b>${fmt(r.base)} kcal</b></div>
-          <div class="r-row total"><span>⚖️ ${dayWord}의 균형</span><b>${signed(r.balance)} kcal</b></div>
+          <div class="r-row"><span>🍽️ 먹은 에너지</span><b data-count="${r.intake}" data-suffix=" kcal">${fmt(r.intake)} kcal</b></div>
+          <div class="r-row"><span>🏃 움직여서 쓴 에너지</span><b data-count="${r.burned}" data-suffix=" kcal">${fmt(r.burned)} kcal</b></div>
+          <div class="r-row"><span>🔋 기본으로 쓰는 에너지</span><b data-count="${r.base}" data-suffix=" kcal">${fmt(r.base)} kcal</b></div>
+          <div class="r-row total"><span>⚖️ ${dayWord}의 균형</span><b data-count="${r.balance}" data-sign="1" data-suffix=" kcal">${signed(r.balance)} kcal</b></div>
           <p class="r-note">먹은 에너지에서 쓴 에너지(기본 + 운동)를 뺀 값이에요. 모두 대략이라서 하루 숫자보다 한 주 흐름을 보는 데 써요.</p>
           ${r.burned && !r.weightMeasured ? '<p class="r-note">체중 기록 전이라 같은 나이 평균 체중으로 계산했어요.</p>' : ''}
         </section>
