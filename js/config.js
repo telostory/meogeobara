@@ -101,3 +101,9 @@ export const REF_WEIGHT_TABLE = [
   [65, 62.4, 50.0],
   [75, 60.1, 46.1],
 ];
+
+// 식사를 기록한 주가 이만큼 모이기 전에는 주간 그래프 대신 '쌓이는 중' 안내를 보여준다
+export const WEEKS_FOR_GRAPH = 3;
+
+// 주간 그래프에 보여줄 주의 수
+export const GRAPH_WEEKS = 8;

@@ -1,10 +1,14 @@
 import {
   PORTIONS, DEFAULT_PORTION, INTENSITIES, EXERCISE_MINUTES, NEW_MENU_SIZES, MEALS,
-  BODY_DAY, RECENT_TAG_COUNT, FREQUENT_TAG_COUNT,
+  BODY_DAY, WEEK_START, RECENT_TAG_COUNT, FREQUENT_TAG_COUNT,
   SEARCH_RESULT_COUNT, CELEBRATE_MS, BODY_START, BASELINE_STEP, FOOD_GROUPS,
 } from './config.js';
-import { dayResult, hasMeal, recommendedBaseline, baseline, ageYears } from './calc.js';
+import { dayResult, hasMeal, recommendedBaseline, baseline, ageYears, ageMonths, itemKcal } from './calc.js';
+import { weeklySeries, recordedWeekCount, bodyPoints, monthSummary } from './progress.js';
+import { loadTable, bmiValue, percentile, inChildRange } from './bmi.js';
+import { weeklyCharts, bmiChart } from './charts.js';
 import { pickPhrase } from './phrases.js';
+import { WEEKS_FOR_GRAPH, GRAPH_WEEKS } from './config.js';
 import { BASE_MENUS, STARTER_TAGS } from './menus.js';
 import { getData, getDay, save } from './storage.js';
 import { dateKey, parseKey, prettyDate, escapeHtml as h, matchesQuery } from './util.js';
@@ -207,7 +211,7 @@ const home = {
     const closeBtn = canClose
       ? `<button class="btn primary big" data-act="close">${day.closed ? '📊 오늘 결과 보기' : '🌟 오늘 마감'}</button>`
       : '';
-    return `<header class="home-head"><span class="icon-btn-space"></span>${brand()}
+    return `<header class="home-head"><button class="icon-btn" data-act="calendar" aria-label="캘린더">📅</button>${brand()}
         <button class="icon-btn" data-act="settings" aria-label="설정">⚙️</button></header>
       <main class="screen home">
         <p class="date">${prettyDate()}</p>
@@ -236,6 +240,10 @@ const home = {
       go({ name: 'result', key: todayKey() });
     },
     settings() { go({ name: 'settings' }); },
+    calendar() {
+      const now = new Date();
+      go({ name: 'calendar', year: now.getFullYear(), month: now.getMonth(), week: null });
+    },
     body() {
       const last = [...getData().body].reverse();
       const w = last.find((b) => b.weight)?.weight ?? BODY_START.weight;
@@ -545,32 +553,224 @@ const celebrateView = {
 const fmt = (n) => Math.round(n).toLocaleString('ko-KR');
 const signed = (n) => (n > 0 ? `+${fmt(n)}` : n < 0 ? `−${fmt(-n)}` : '0');
 
+function dayRecordsHtml(day) {
+  const meals = MEALS.filter((m) => (day?.meals?.[m.id] || []).length).map((m) => `
+    <div class="rec-row"><b>${m.emoji} ${m.label}</b>
+      <span>${day.meals[m.id].map((it) => `${h(it.name)}${it.portion !== DEFAULT_PORTION ? ` (${portionLabel(it.portion)})` : ''}`).join(', ')}</span></div>`).join('');
+  const ex = (day?.exercises || []).map((x) => {
+    const it = INTENSITIES.find((i) => i.id === x.intensity);
+    return `<div class="rec-row"><b>${it.emoji} 운동</b><span>${it.label} · ${x.minutes}분</span></div>`;
+  }).join('');
+  return meals + ex;
+}
+
 const result = {
   html(s) {
-    const r = dayResult(getData(), s.key);
+    const data = getData();
+    const day = data.days[s.key];
+    const isToday = s.key === todayKey();
+    const title = isToday ? '오늘 결과' : prettyDate(parseKey(s.key));
+    const backLabel = s.from ? '돌아가기' : '홈으로';
+    if (!hasMeal(day) && !(day?.exercises || []).length) {
+      return `${topBar({ title })}
+        <main class="screen result">
+          <div class="bubble">이 날은 기록이 없어요.</div>
+          <button class="btn primary big" data-act="back">${backLabel}</button>
+        </main>`;
+    }
+    const r = dayResult(data, s.key);
     const groups = ['v', 'f', 'p', 'd'].map((g) => {
       const on = r.groups.has(g);
       return `<div class="group ${on ? 'on' : ''}"><span class="group-emoji">${FOOD_GROUPS[g].emoji}</span>
         <span>${FOOD_GROUPS[g].label}</span><span class="group-mark">${on ? '✓' : ''}</span></div>`;
     }).join('');
-    const isToday = s.key === todayKey();
-    return `${topBar({ title: isToday ? '오늘 결과' : prettyDate(parseKey(s.key)) })}
+    const dayWord = isToday ? '오늘' : '이 날';
+    return `${topBar({ title })}
       <main class="screen result">
         <div class="bubble">${h(pickPhrase(r, s.key))}</div>
         <section class="card result-card">
           <div class="r-row"><span>🍽️ 먹은 에너지</span><b>${fmt(r.intake)} kcal</b></div>
           <div class="r-row"><span>🏃 움직여서 쓴 에너지</span><b>${fmt(r.burned)} kcal</b></div>
           <div class="r-row"><span>🔋 기본으로 쓰는 에너지</span><b>${fmt(r.base)} kcal</b></div>
-          <div class="r-row total"><span>⚖️ 오늘의 균형</span><b>${signed(r.balance)} kcal</b></div>
+          <div class="r-row total"><span>⚖️ ${dayWord}의 균형</span><b>${signed(r.balance)} kcal</b></div>
           <p class="r-note">먹은 에너지에서 쓴 에너지(기본 + 운동)를 뺀 값이에요. 모두 대략이라서 하루 숫자보다 한 주 흐름을 보는 데 써요.</p>
           ${r.burned && !r.weightMeasured ? '<p class="r-note">체중 기록 전이라 같은 나이 평균 체중으로 계산했어요.</p>' : ''}
         </section>
-        <h2 class="sub">오늘 먹은 식품군</h2>
+        <h2 class="sub">${dayWord} 먹은 식품군</h2>
         <div class="groups">${groups}</div>
-        <button class="btn primary big" data-act="back">${isToday ? '홈으로' : '돌아가기'}</button>
+        <h2 class="sub">${dayWord} 기록</h2>
+        <section class="card records">${dayRecordsHtml(day)}</section>
+        <button class="btn primary big" data-act="back">${backLabel}</button>
       </main>`;
   },
-  acts: { back: () => goHome() },
+  acts: {
+    back(s) {
+      if (s.from) go(s.from);
+      else goHome();
+    },
+  },
+};
+
+// ---------- 캘린더 ----------
+
+function calendarGrid(s) {
+  const data = getData();
+  const first = new Date(s.year, s.month, 1);
+  const daysIn = new Date(s.year, s.month + 1, 0).getDate();
+  const lead = (first.getDay() - WEEK_START + 7) % 7;
+  const today = todayKey();
+  const bodyDates = new Set(data.body.map((b) => b.date));
+  const names = ['일', '월', '화', '수', '목', '금', '토'];
+  let cells = '';
+  for (let i = 0; i < 7; i += 1) cells += `<div class="cal-head">${names[(WEEK_START + i) % 7]}</div>`;
+  for (let i = 0; i < lead; i += 1) cells += '<div></div>';
+  for (let d = 1; d <= daysIn; d += 1) {
+    const key = dateKey(new Date(s.year, s.month, d));
+    const day = data.days[key];
+    const meal = hasMeal(day);
+    const ex = (day?.exercises || []).length > 0;
+    const future = key > today;
+    cells += `<button class="cal-day ${key === today ? 'today' : ''}" data-act="day" data-key="${key}" ${future ? 'disabled' : ''}
+        aria-label="${s.month + 1}월 ${d}일${meal ? ', 식사 기록' : ''}${ex ? ', 운동 기록' : ''}${bodyDates.has(key) ? ', 체중 기록' : ''}">
+      <span class="cal-num">${d}${bodyDates.has(key) ? '<i class="cal-dot"></i>' : ''}</span>
+      <span class="cal-icons">${meal ? '🍚' : ''}${ex ? '🏃' : ''}</span>
+    </button>`;
+  }
+  return cells;
+}
+
+function weeklySection(s) {
+  const data = getData();
+  const count = recordedWeekCount(data);
+  if (count < WEEKS_FOR_GRAPH) {
+    return `<section class="card chart-card">
+      <div class="card-title">한 주 흐름</div>
+      <p class="card-sub wrap">기록이 쌓이는 중이에요. ${WEEKS_FOR_GRAPH}주쯤 모이면 먹고 움직인 것과 체중이 함께 움직이는 그래프가 여기에 생겨요.</p>
+      <div class="progress soft"><div class="progress-fill" style="width:${(count / WEEKS_FOR_GRAPH) * 100}%"></div></div>
+      <p class="hint">${count} / ${WEEKS_FOR_GRAPH}주</p>
+    </section>`;
+  }
+  const weeks = weeklySeries(data, GRAPH_WEEKS);
+  const sel = s.week;
+  let detail = '주 칸을 누르면 그 주의 값이 보여요.';
+  if (sel !== null && weeks[sel]) {
+    const w = weeks[sel];
+    const [, m1, d1] = w.start.split('-').map(Number);
+    const [, m2, d2] = w.end.split('-').map(Number);
+    detail = `<b>${m1}/${d1}~${m2}/${d2}</b> · 평균 균형 ${w.balance === null ? '기록 없음' : `${signed(w.balance)} kcal`}
+      · 체중 ${w.weight === null ? '기록 없음' : `${w.weight} kg`}`;
+  }
+  return `<section class="card chart-card">
+    <div class="card-title">한 주 흐름</div>
+    <p class="week-detail">${detail}</p>
+    ${weeklyCharts(weeks, sel)}
+  </section>`;
+}
+
+function reviewSection() {
+  return `<section class="card chart-card">
+    <div class="card-title">주간 리뷰</div>
+    <p class="card-sub wrap">일요일마다 지난 한 주(일~토)를 돌아보는 리뷰가 여기에 쌓여요. 리뷰는 Claude를 연결한 뒤부터 만들어져요.</p>
+  </section>`;
+}
+
+async function fillBmi() {
+  const box = document.getElementById('bmi');
+  if (!box) return;
+  const data = getData();
+  const p = data.profile;
+  const nowMonths = ageMonths(p, new Date());
+  const pts = bodyPoints(data);
+  if (!inChildRange(nowMonths)) {
+    const last = pts[pts.length - 1];
+    box.innerHTML = `<div class="card-title">BMI</div>
+      <p class="card-sub wrap">${last ? `마지막 기록 BMI는 <b>${bmiValue(last.weight, last.height).toFixed(1)}</b>이에요.` : '체중과 키를 적으면 BMI가 보여요.'}</p>`;
+    return;
+  }
+  try {
+    const table = await loadTable(p.sex);
+    if (!document.getElementById('bmi')) return;
+    const points = pts.filter((x) => inChildRange(x.months)).map((x) => ({ ...x, bmi: bmiValue(x.weight, x.height) }));
+    const last = points[points.length - 1];
+    const pct = last ? percentile(table, last.months, last.bmi) : null;
+    box.innerHTML = `<div class="card-title">BMI 성장도표</div>
+      <p class="card-sub wrap">${last
+        ? `마지막 기록: BMI ${last.bmi.toFixed(1)} · 백분위 ${pct.label}`
+        : '일요일에 체중과 키를 적으면 내 위치가 점으로 찍혀요.'}</p>
+      ${bmiChart(table, points, nowMonths)}
+      <p class="r-note">질병관리청 2017 소아청소년 성장도표 기준이에요. 오른쪽 숫자는 백분위 곡선이에요.</p>`;
+  } catch (e) {
+    box.innerHTML = '<div class="card-title">BMI 성장도표</div><p class="card-sub wrap">성장도표를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.</p>';
+  }
+}
+
+const calendar = {
+  html(s) {
+    const isCurrent = s.year === new Date().getFullYear() && s.month === new Date().getMonth();
+    return `${topBar({ title: '내 기록' })}
+      <main class="screen calendar">
+        <div class="cal-nav">
+          <button class="icon-btn" data-act="month" data-d="-1" aria-label="이전 달">‹</button>
+          <b>${s.year}년 ${s.month + 1}월</b>
+          <button class="icon-btn" data-act="month" data-d="1" aria-label="다음 달" ${isCurrent ? 'disabled' : ''}>›</button>
+        </div>
+        <section class="card cal-card"><div class="cal-grid">${calendarGrid(s)}</div>
+          <p class="cal-legend">🍚 식사 · 🏃 운동 · <i class="cal-dot"></i> 체중</p></section>
+        <button class="btn big" data-act="summary">📋 ${s.month + 1}월 요약 보기</button>
+        ${weeklySection(s)}
+        ${reviewSection()}
+        <section class="card chart-card" id="bmi"><div class="card-title">BMI</div><p class="card-sub">불러오는 중…</p></section>
+      </main>`;
+  },
+  mount() { fillBmi(); },
+  acts: {
+    back: () => goHome(),
+    month(s, d) {
+      const dt = new Date(s.year, s.month + Number(d.d), 1);
+      s.year = dt.getFullYear();
+      s.month = dt.getMonth();
+      render();
+    },
+    day(s, d) { go({ name: 'result', key: d.key, from: s }); },
+    week(s, d) {
+      const i = Number(d.idx);
+      s.week = s.week === i ? null : i;
+      const y = window.scrollY;
+      render();
+      window.scrollTo(0, y);
+    },
+    summary(s) { go({ name: 'summary', year: s.year, month: s.month, from: s }); },
+  },
+};
+
+// ---------- 월간 요약 ----------
+
+const summary = {
+  html(s) {
+    const data = getData();
+    const sum = monthSummary(data, s.year, s.month);
+    const p = data.profile;
+    const change = (c, unit) => {
+      if (!c) return '기록 없음';
+      if (c.firstDate === c.lastDate) return `${c.last} ${unit}`;
+      return `${c.first} → ${c.last} ${unit}`;
+    };
+    return `${topBar({ title: `${s.month + 1}월 요약` })}
+      <main class="screen">
+        <section class="card summary-card">
+          <div class="card-title">${s.year}년 ${s.month + 1}월</div>
+          <p class="card-sub">${h(p.name)} · 만 ${ageYears(p, new Date(s.year, s.month + 1, 0))}세 · ${p.sex === 'M' ? '남자' : '여자'}</p>
+          <div class="r-row"><span>기록한 날</span><b>${sum.recordedDays}일</b></div>
+          <div class="r-row"><span>하루 평균 섭취</span><b>${sum.avgIntake === null ? '기록 없음' : `${fmt(sum.avgIntake)} kcal`}</b></div>
+          <div class="r-row"><span>운동</span><b>${sum.exCount}번 · ${fmt(sum.exMinutes)}분</b></div>
+          <div class="r-row"><span>체중</span><b>${change(sum.weight, 'kg')}</b></div>
+          <div class="r-row last"><span>키</span><b>${change(sum.height, 'cm')}</b></div>
+          <p class="r-note">평균 섭취는 식사를 기록한 날만 셌어요. 칼로리는 모두 대략이에요.</p>
+        </section>
+        <button class="btn primary big" data-act="back">돌아가기</button>
+      </main>`;
+  },
+  acts: { back(s) { go(s.from); } },
 };
 
 // ---------- 설정 ----------
@@ -615,7 +815,7 @@ const settings = {
   },
 };
 
-const VIEWS = { onboarding, home, meal, newMenu, exercise, body, result, settings, celebrate: celebrateView };
+const VIEWS = { onboarding, home, meal, newMenu, exercise, body, result, settings, calendar, summary, celebrate: celebrateView };
 
 // ---------- 시작 ----------
 

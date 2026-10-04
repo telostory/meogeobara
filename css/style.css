@@ -425,3 +425,71 @@ button.card:active { transform: translateY(3px); border-bottom-width: 2px; margi
 .settings-card { gap: 10px; }
 .card-sub.wrap { white-space: normal; line-height: 1.5; }
 .stepper.three { width: 100%; grid-template-columns: 1fr 1.6fr 1fr; }
+
+/* ---------- 하루 기록 목록 ---------- */
+
+.records { gap: 0; padding: 4px 16px; }
+.rec-row { width: 100%; display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-bottom: 2px dashed var(--line); }
+.rec-row:last-child { border-bottom: none; }
+.rec-row span { font-size: 16px; color: var(--fur-dark); line-height: 1.5; }
+
+/* ---------- 캘린더 ---------- */
+
+.cal-nav { display: flex; align-items: center; justify-content: space-between; font-size: 22px; }
+.cal-nav .icon-btn { background: var(--yellow-soft); font-size: 28px; }
+.cal-nav .icon-btn:disabled { opacity: 0.3; }
+
+.cal-card { padding: 10px 8px; }
+.cal-grid { width: 100%; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.cal-head { text-align: center; font-size: 13px; font-weight: 700; color: var(--fur-dark); padding: 4px 0; }
+
+.cal-day {
+  min-height: 54px;
+  padding: 4px 0;
+  border: none;
+  border-radius: 12px;
+  background: var(--cream);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.cal-day:disabled { background: transparent; color: #cdbba3; }
+.cal-day.today { background: var(--yellow); }
+.cal-num { position: relative; font-size: 15px; font-weight: 800; }
+.cal-icons { font-size: 12px; line-height: 1; min-height: 14px; letter-spacing: -2px; }
+
+.cal-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--grass-dark);
+  vertical-align: middle;
+}
+
+.cal-num .cal-dot { position: absolute; top: 0; right: -9px; }
+.cal-legend { margin: 8px 0 0; width: 100%; text-align: center; font-size: 13px; color: var(--fur-dark); }
+
+/* ---------- 그래프 ---------- */
+
+.chart-card { gap: 8px; }
+.chart { width: 100%; height: auto; display: block; overflow: visible; }
+.chart .tick { font-size: 11px; fill: var(--fur-dark); font-family: inherit; }
+.chart .tick.on { font-weight: 800; fill: var(--ink); }
+.chart [data-act] { cursor: pointer; }
+
+.chart-label { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: var(--ink); margin-top: 4px; }
+.key { display: inline-block; }
+.key.bar { width: 10px; height: 14px; border-radius: 3px 3px 0 0; background: #8a5a3c; }
+.key.line { width: 16px; height: 2px; background: #5f7a33; position: relative; }
+.key.line::after { content: ""; position: absolute; left: 4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: #5f7a33; }
+
+.week-detail { margin: 0; min-height: 44px; font-size: 15px; line-height: 1.5; color: var(--fur-dark); }
+.week-detail b { color: var(--ink); }
+
+.progress.soft { width: 100%; flex: none; background: var(--yellow-soft); }
+.summary-card { gap: 0; padding: 14px 16px; }
+.summary-card .card-sub { margin-bottom: 6px; }
+.r-row.last { border-bottom: none; }
