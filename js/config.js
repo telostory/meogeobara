@@ -107,3 +107,7 @@ export const WEEKS_FOR_GRAPH = 3;
 
 // 주간 그래프에 보여줄 주의 수
 export const GRAPH_WEEKS = 8;
+
+// 스트릭 프리즈: 처음에 가진 개수(최대 개수)와 다시 채워지는 연속 기록 일수
+export const FREEZE_MAX = 1;
+export const FREEZE_REFILL_DAYS = 7;

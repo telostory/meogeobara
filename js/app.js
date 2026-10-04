@@ -1,13 +1,16 @@
 import {
   PORTIONS, DEFAULT_PORTION, INTENSITIES, EXERCISE_MINUTES, NEW_MENU_SIZES, MEALS,
   BODY_DAY, WEEK_START, RECENT_TAG_COUNT, FREQUENT_TAG_COUNT,
-  SEARCH_RESULT_COUNT, CELEBRATE_MS, BODY_START, BASELINE_STEP, FOOD_GROUPS,
+  SEARCH_RESULT_COUNT, CELEBRATE_MS, BODY_START, BASELINE_STEP, FOOD_GROUPS, FREEZE_REFILL_DAYS,
 } from './config.js';
 import { dayResult, hasMeal, recommendedBaseline, baseline, ageYears, ageMonths, itemKcal } from './calc.js';
 import { weeklySeries, recordedWeekCount, bodyPoints, monthSummary } from './progress.js';
 import { loadTable, bmiValue, percentile, inChildRange } from './bmi.js';
 import { weeklyCharts, bmiChart } from './charts.js';
 import { pickPhrase } from './phrases.js';
+import { streakInfo } from './streak.js';
+import { BADGES, awardBadges } from './badges.js';
+import { playCheer } from './sound.js';
 import { WEEKS_FOR_GRAPH, GRAPH_WEEKS } from './config.js';
 import { BASE_MENUS, STARTER_TAGS } from './menus.js';
 import { getData, getDay, save } from './storage.js';
@@ -197,6 +200,22 @@ const home = {
       </button>`;
     }).join('');
     const minutes = day.exercises.reduce((a, x) => a + x.minutes, 0);
+    const st = streakInfo(data, todayKey());
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    const frozeYesterday = st.frozenDays.has(dateKey(y));
+    const tasks = ['breakfast', 'lunch', 'dinner'].map((m) => (day.meals[m] || []).length > 0).concat(minutes > 0);
+    const doneCount = tasks.filter(Boolean).length;
+    const statusRow = `<button class="streak-row" data-act="badges" aria-label="스트릭과 뱃지 보기">
+        <span class="pill ${st.todayDone ? 'lit' : ''}">🔥 <b>${st.streak}</b>일 연속</span>
+        <span class="pill">🧊 프리즈 <b>${st.freeze}</b></span>
+        <span class="pill">🏅 <b>${Object.keys(data.badges || {}).length}</b></span>
+      </button>
+      ${frozeYesterday ? '<p class="freeze-note">어제는 🧊 프리즈가 스트릭을 지켜 줬어요!</p>' : ''}
+      <div class="today-progress">
+        <div class="progress soft"><div class="progress-fill" style="width:${(doneCount / tasks.length) * 100}%"></div></div>
+        <span>오늘 ${doneCount}/${tasks.length}</span>
+      </div>`;
     const bodyCard = bodyCardDue()
       ? `<div class="card body-card">
           <div><span class="card-emoji">📏</span> <b>오늘은 몸 기록하는 날</b></div>
@@ -216,6 +235,7 @@ const home = {
       <main class="screen home">
         <p class="date">${prettyDate()}</p>
         <h1 class="hello">${h(data.profile.name)}, 오늘 뭐 먹었어?</h1>
+        ${statusRow}
         ${bodyCard}
         <div class="meal-grid">${mealCards}</div>
         <button class="card exercise-card ${minutes ? 'done' : ''}" data-act="exercise">
@@ -240,6 +260,7 @@ const home = {
       go({ name: 'result', key: todayKey() });
     },
     settings() { go({ name: 'settings' }); },
+    badges() { go({ name: 'badges' }); },
     calendar() {
       const now = new Date();
       go({ name: 'calendar', year: now.getFullYear(), month: now.getMonth(), week: null });
@@ -361,6 +382,7 @@ const meal = {
       const data = getData();
       const day = getDay(todayKey());
       const before = new Set((day.meals[s.mealId] || []).map((i) => i.menuId));
+      const firstMealToday = !hasMeal(day);
       const now = Date.now();
       for (const it of s.items) {
         if (before.has(it.menuId)) continue;
@@ -371,8 +393,13 @@ const meal = {
       else delete day.meals[s.mealId];
       save();
       const label = MEALS.find((x) => x.id === s.mealId).label;
-      if (s.items.length) celebrate(`${label} 기록 완료!`, '잘했어! 오늘도 한 칸 채웠어요.');
-      else goHome();
+      if (!s.items.length) { goHome(); return; }
+      let sub = '잘했어! 오늘도 한 칸 채웠어요.';
+      if (firstMealToday) {
+        const st = streakInfo(data, todayKey()).streak;
+        sub = st >= 2 ? `🔥 ${st}일 연속 기록! 계속 이어 가 보자.` : '🔥 오늘 기록 시작! 내일도 이어 가 보자.';
+      }
+      celebrate(`${label} 기록 완료!`, sub);
     },
   },
 };
@@ -515,8 +542,17 @@ function saveBody(weight, height) {
 
 // ---------- 축하 ----------
 
+// 저장할 때마다 부른다: 새 뱃지를 확인하고, 효과음을 내고, 축하 화면을 띄운다
 function celebrate(title, sub) {
-  go({ name: 'celebrate', title, sub });
+  const data = getData();
+  const badges = data.profile ? awardBadges(data, todayKey()) : [];
+  save();
+  if (soundOn()) playCheer(badges.length > 0);
+  go({ name: 'celebrate', title, sub, badges: badges.map((b) => b.id) });
+}
+
+function soundOn() {
+  return getData().settings?.sound !== false;
 }
 
 const celebrateView = {
@@ -533,11 +569,16 @@ const celebrateView = {
         <div class="badge-pop">✓</div>
         <h1 class="q">${h(s.title)}</h1>
         <p class="celebrate-sub">${h(s.sub)}</p>
+        ${s.badges.length ? `<div class="new-badges">
+          <p class="new-badges-title">새 뱃지를 받았어!</p>
+          ${s.badges.map((id) => BADGES.find((b) => b.id === id)).map((b) => `<div class="badge-chip"><span>${b.emoji}</span><b>${b.name}</b></div>`).join('')}
+        </div>` : ''}
         <button class="btn primary big" data-act="done">확인</button>
       </main>`;
   },
-  mount() {
-    celebrateTimer = setTimeout(() => celebrateView.acts.done(), CELEBRATE_MS);
+  mount(s) {
+    // 뱃지를 받은 날은 천천히 볼 수 있게 저절로 닫지 않는다
+    if (!s.badges.length) celebrateTimer = setTimeout(() => celebrateView.acts.done(), CELEBRATE_MS);
   },
   acts: {
     done() {
@@ -620,6 +661,7 @@ function calendarGrid(s) {
   const lead = (first.getDay() - WEEK_START + 7) % 7;
   const today = todayKey();
   const bodyDates = new Set(data.body.map((b) => b.date));
+  const frozen = streakInfo(data, today).frozenDays;
   const names = ['일', '월', '화', '수', '목', '금', '토'];
   let cells = '';
   for (let i = 0; i < 7; i += 1) cells += `<div class="cal-head">${names[(WEEK_START + i) % 7]}</div>`;
@@ -633,7 +675,7 @@ function calendarGrid(s) {
     cells += `<button class="cal-day ${key === today ? 'today' : ''}" data-act="day" data-key="${key}" ${future ? 'disabled' : ''}
         aria-label="${s.month + 1}월 ${d}일${meal ? ', 식사 기록' : ''}${ex ? ', 운동 기록' : ''}${bodyDates.has(key) ? ', 체중 기록' : ''}">
       <span class="cal-num">${d}${bodyDates.has(key) ? '<i class="cal-dot"></i>' : ''}</span>
-      <span class="cal-icons">${meal ? '🍚' : ''}${ex ? '🏃' : ''}</span>
+      <span class="cal-icons">${meal ? '🍚' : ''}${ex ? '🏃' : ''}${frozen.has(key) ? '🧊' : ''}</span>
     </button>`;
   }
   return cells;
@@ -715,7 +757,7 @@ const calendar = {
           <button class="icon-btn" data-act="month" data-d="1" aria-label="다음 달" ${isCurrent ? 'disabled' : ''}>›</button>
         </div>
         <section class="card cal-card"><div class="cal-grid">${calendarGrid(s)}</div>
-          <p class="cal-legend">🍚 식사 · 🏃 운동 · <i class="cal-dot"></i> 체중</p></section>
+          <p class="cal-legend">🍚 식사 · 🏃 운동 · 🧊 프리즈 · <i class="cal-dot"></i> 체중</p></section>
         <button class="btn big" data-act="summary">📋 ${s.month + 1}월 요약 보기</button>
         ${weeklySection(s)}
         ${reviewSection()}
@@ -773,6 +815,39 @@ const summary = {
   acts: { back(s) { go(s.from); } },
 };
 
+// ---------- 스트릭과 뱃지 ----------
+
+const badgesView = {
+  html() {
+    const data = getData();
+    const st = streakInfo(data, todayKey());
+    const got = data.badges || {};
+    const cards = BADGES.map((b) => {
+      const when = got[b.id];
+      const [, m, d] = when ? when.split('-').map(Number) : [];
+      return `<div class="badge-card ${when ? 'got' : ''}">
+        <span class="badge-emoji">${b.emoji}</span>
+        <b>${b.name}</b>
+        <small>${when ? `${m}월 ${d}일에 받았어요` : b.desc}</small>
+      </div>`;
+    }).join('');
+    return `${topBar({ title: '스트릭과 뱃지' })}
+      <main class="screen">
+        <section class="card streak-card">
+          <div class="streak-big">🔥 ${st.streak}<small>일 연속</small></div>
+          <p class="card-sub wrap">하루에 식사를 한 번이라도 기록하면 이어져요. 가장 길게 이어 간 기록은 ${st.best}일이에요.</p>
+          <div class="freeze-box">
+            <span class="badge-emoji">🧊</span>
+            <p>프리즈 <b>${st.freeze}개</b>. 기록을 하루 빠뜨리면 저절로 쓰여서 스트릭을 지켜 줘요. 다 쓰면 ${FREEZE_REFILL_DAYS}일 연속 기록할 때 다시 채워져요.</p>
+          </div>
+        </section>
+        <h2 class="sub">뱃지 ${Object.keys(got).length} / ${BADGES.length}</h2>
+        <div class="badge-grid">${cards}</div>
+      </main>`;
+  },
+  acts: { back: () => goHome() },
+};
+
 // ---------- 설정 ----------
 
 const settings = {
@@ -796,6 +871,13 @@ const settings = {
           </div>
           ${p.baseline ? '<button class="btn ghost" data-act="baseReset">추천값으로 되돌리기</button>' : ''}
         </section>
+        <section class="card settings-card">
+          <div class="card-title">효과음</div>
+          <div class="seg full">
+            <button class="seg-btn ${soundOn() ? 'on' : ''}" data-act="sound" data-v="1">🔔 켜기</button>
+            <button class="seg-btn ${soundOn() ? '' : 'on'}" data-act="sound" data-v="0">🔕 끄기</button>
+          </div>
+        </section>
       </main>`;
   },
   acts: {
@@ -807,6 +889,13 @@ const settings = {
       save();
       render();
     },
+    sound(s, d) {
+      const data = getData();
+      data.settings = { ...(data.settings || {}), sound: d.v === '1' };
+      save();
+      if (d.v === '1') playCheer();
+      render();
+    },
     baseReset() {
       getData().profile.baseline = null;
       save();
@@ -815,7 +904,7 @@ const settings = {
   },
 };
 
-const VIEWS = { onboarding, home, meal, newMenu, exercise, body, result, settings, calendar, summary, celebrate: celebrateView };
+const VIEWS = { onboarding, home, meal, newMenu, exercise, body, result, settings, calendar, summary, badges: badgesView, celebrate: celebrateView };
 
 // ---------- 시작 ----------
 

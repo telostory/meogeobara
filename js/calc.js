@@ -2,7 +2,8 @@
 // 같은 기록이면 언제나 같은 숫자가 나와야 한다.
 
 import { PORTIONS, INTENSITIES, EER_TABLE, REF_WEIGHT_TABLE, MEALS } from './config.js';
-import { dateKey, parseKey } from './util.js';
+import { parseKey } from './util.js';
+import { streakInfo } from './streak.js';
 
 // 그 날짜 기준 만 나이와 월령 (태어난 날은 모르므로 그 달 1일로 본다)
 export function ageMonths(profile, date) {
@@ -78,17 +79,6 @@ export function mealsRecorded(day) {
   return MEALS.filter((m) => (day?.meals?.[m.id] || []).length).map((m) => m.id);
 }
 
-// 오늘까지 식사 기록이 이어진 날 수 (프리즈는 4단계에서 더한다)
-export function streakDays(data, key) {
-  let n = 0;
-  const d = parseKey(key);
-  while (hasMeal(data.days[dateKey(d)])) {
-    n += 1;
-    d.setDate(d.getDate() - 1);
-  }
-  return n;
-}
-
 // 하루 결과 한 번에 계산
 export function dayResult(data, key) {
   const day = data.days[key];
@@ -105,7 +95,7 @@ export function dayResult(data, key) {
     minutes: exerciseMinutes(day),
     groups: foodGroupsEaten(day),
     meals: mealsRecorded(day),
-    streak: streakDays(data, key),
+    streak: streakInfo(data, key).streak,
     weightMeasured: weight.measured,
   };
 }
