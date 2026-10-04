@@ -750,3 +750,5 @@ button.card:active { transform: translateY(3px); border-bottom-width: 2px; margi
   #app { max-width: 720px; }
 }
 #app.typing .bottom-bar { display: none; }
+.btn.danger { color: #a8432a; font-size: 16px; margin-top: 4px; }
+.settings-card .row, .settings-card > .btn { width: 100%; }

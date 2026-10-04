@@ -15,7 +15,7 @@ import { playCheer } from './sound.js';
 import { APP_VERSION, refreshApp } from './version.js';
 import { WEEKS_FOR_GRAPH, GRAPH_WEEKS, REVIEW_MIN_DAYS } from './config.js';
 import { BASE_MENUS, STARTER_TAGS } from './menus.js';
-import { getData, getDay, save } from './storage.js';
+import { getData, getDay, save, exportJson, importJson, resetData, askPersist } from './storage.js';
 import { dateKey, parseKey, prettyDate, escapeHtml as h, matchesQuery, weekStartKey } from './util.js';
 
 const weekStartKeyOf = (d) => weekStartKey(d, WEEK_START);
@@ -1162,6 +1162,21 @@ const settings = {
             <button class="seg-btn ${soundOn() ? '' : 'on'}" data-act="sound" data-v="0">🔕 끄기</button>
           </div>
         </section>
+        ${isStandalone() ? '' : `<section class="card settings-card">
+          <div class="card-title">홈 화면에 추가하기</div>
+          <p class="card-sub wrap">사파리 아래쪽(아이패드는 위쪽)의 공유 버튼 <b>⬆︎</b> → <b>홈 화면에 추가</b>를 누르면 앱처럼 쓸 수 있어요. 홈 화면에 추가해서 쓰면 기록이 더 안전하게 보관돼요.</p>
+        </section>`}
+        <section class="card settings-card">
+          <div class="card-title">기록 보관</div>
+          <p class="card-sub wrap">기록은 이 기기에만 저장돼요. 가끔 파일로 내보내 두면 기기를 바꿔도 가져올 수 있어요. 파일에 API 키는 들어가지 않아요.</p>
+          <div class="row">
+            <button class="btn" data-act="exportData">📤 내보내기</button>
+            <button class="btn" data-act="importData">📥 가져오기</button>
+          </div>
+          <input id="importFile" type="file" accept="application/json,.json" hidden>
+          ${s.dataMsg ? `<p class="hint left">${h(s.dataMsg)}</p>` : ''}
+          <button class="btn ghost danger" data-act="resetData">기록 모두 지우기</button>
+        </section>
         <section class="card settings-card">
           <div class="card-title">앱 버전</div>
           <p class="card-sub wrap">지금 버전: ${APP_VERSION}. 홈 화면 아이콘으로 쓸 때는 이 버튼으로 새 버전을 받아요. 기록은 그대로 남아요.</p>
@@ -1178,6 +1193,42 @@ const settings = {
       p.baseline = next === recommendedBaseline(p) ? null : next;
       save();
       render();
+    },
+    exportData(s) {
+      const blob = new Blob([exportJson()], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `meogeobara-${todayKey()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      s.dataMsg = '파일을 저장했어요. 파일 앱이나 다운로드 폴더에서 찾을 수 있어요.';
+      render();
+    },
+    importData(s) {
+      const input = document.getElementById('importFile');
+      input.onchange = async () => {
+        const file = input.files[0];
+        if (!file) return;
+        if (!window.confirm('지금 이 기기의 기록을 파일의 기록으로 바꿀까요? 지금 기록은 사라져요.')) return;
+        try {
+          importJson(await file.text());
+          s.dataMsg = '';
+          go({ name: 'home' });
+          toast('기록을 가져왔어요!', `${getData().profile.name}의 기록이에요.`);
+        } catch (e) {
+          s.dataMsg = `가져오지 못했어요. ${e.message || ''}`;
+          render();
+        }
+      };
+      input.click();
+    },
+    resetData() {
+      if (!window.confirm('이 기기의 기록을 모두 지울까요? 되돌릴 수 없어요.')) return;
+      if (!window.confirm('정말 지울까요? 먼저 내보내기를 해 두면 나중에 가져올 수 있어요.')) return;
+      resetData();
+      go({ name: 'onboarding', step: 1, userName: '', birthYear: null, birthMonth: null });
     },
     async update(s) {
       s.updating = true;
@@ -1227,6 +1278,15 @@ const settings = {
 const VIEWS = { onboarding, home, meal, newMenu, exercise, body, result, settings, calendar, summary, review, badges: badgesView, celebrate: celebrateView };
 
 // ---------- 시작 ----------
+
+function isStandalone() {
+  return window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+
+askPersist();
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
 
 try {
   const up = JSON.parse(sessionStorage.getItem('meogeobara.updated') || 'null');

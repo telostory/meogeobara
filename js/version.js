@@ -1,10 +1,12 @@
 // 앱 버전. 바뀐 내용을 올릴 때마다 숫자를 올린다. 설정 화면 맨 아래에 보인다.
-export const APP_VERSION = '2026.10.04-8';
+export const APP_VERSION = '2026.10.04-9';
 
 // '최신 버전 가져오기'에서 새로 받아 올 파일들. 파일을 더하면 여기에도 적는다.
 export const APP_FILES = [
   './',
   'index.html',
+  'manifest.json',
+  'sw.js',
   'css/style.css',
   'js/app.js',
   'js/badges.js',

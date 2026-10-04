@@ -165,5 +165,5 @@ Claude는 규칙으로 할 수 없는 두 가지만 맡는다. 키가 없거나 
 
 - [x] 카피바라 아이콘 원본: `assets/icon.png`
 - [x] BMI 백분위수 표: `data/bmi_male.csv`, `data/bmi_female.csv`. 열은 `age_months`와 백분위 13개(`p1`~`p99`)이고, 24~227개월이 한 달 단위로 들어 있다
-- [ ] 이 앱 전용 API 키를 만들고 Claude 콘솔에서 사용 한도 걸기
+- [x] 이 앱 전용 API 키를 만들고 Claude 콘솔에서 사용 한도 걸기
 - [ ] Claude Code가 만든 기본 메뉴 200~300개를 훑어보고 우리 집 단골 메뉴 추가하기
