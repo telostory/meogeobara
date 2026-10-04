@@ -23,6 +23,8 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
   font-size: 18px;
   -webkit-tap-highlight-color: transparent;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 #app {
@@ -362,3 +364,64 @@ button.card:active { transform: translateY(3px); border-bottom-width: 2px; margi
   .badge-pop, .confetti i { animation: none; }
   .confetti { display: none; }
 }
+
+/* ---------- 하루 결과 ---------- */
+
+.home-head { justify-content: space-between; }
+
+.bubble {
+  position: relative;
+  padding: 18px 20px;
+  border-radius: var(--radius);
+  background: var(--yellow);
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.result-card { gap: 0; padding: 8px 16px 14px; }
+
+.r-row {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 2px dashed var(--line);
+  font-size: 17px;
+}
+
+.r-row b { font-size: 20px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.r-row.total { border-bottom: none; font-weight: 800; }
+.r-row.total b { font-size: 26px; color: var(--grass-dark); }
+
+.r-note { margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: var(--fur-dark); }
+
+.groups { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+
+.group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 4px;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--white);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--fur-dark);
+}
+
+.group-emoji { font-size: 28px; filter: grayscale(1); opacity: 0.45; }
+.group-mark { height: 22px; font-weight: 900; color: var(--grass-dark); }
+.group.on { background: var(--yellow-soft); border-color: var(--grass); color: var(--ink); }
+.group.on .group-emoji { filter: none; opacity: 1; }
+
+/* ---------- 설정 ---------- */
+
+.settings-card { gap: 10px; }
+.card-sub.wrap { white-space: normal; line-height: 1.5; }
+.stepper.three { width: 100%; grid-template-columns: 1fr 1.6fr 1fr; }

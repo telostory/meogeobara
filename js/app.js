@@ -1,11 +1,13 @@
 import {
   PORTIONS, DEFAULT_PORTION, INTENSITIES, EXERCISE_MINUTES, NEW_MENU_SIZES, MEALS,
   BODY_DAY, RECENT_TAG_COUNT, FREQUENT_TAG_COUNT,
-  SEARCH_RESULT_COUNT, CELEBRATE_MS, BODY_START,
+  SEARCH_RESULT_COUNT, CELEBRATE_MS, BODY_START, BASELINE_STEP, FOOD_GROUPS,
 } from './config.js';
+import { dayResult, hasMeal, recommendedBaseline, baseline, ageYears } from './calc.js';
+import { pickPhrase } from './phrases.js';
 import { BASE_MENUS, STARTER_TAGS } from './menus.js';
 import { getData, getDay, save } from './storage.js';
-import { dateKey, prettyDate, escapeHtml as h, matchesQuery } from './util.js';
+import { dateKey, parseKey, prettyDate, escapeHtml as h, matchesQuery } from './util.js';
 
 const app = document.getElementById('app');
 let screen = null; // 지금 보고 있는 화면 { name, ...상태 }
@@ -201,7 +203,12 @@ const home = {
           </div>
         </div>`
       : '';
-    return `<header class="home-head">${brand()}</header>
+    const canClose = hasMeal(day) || day.exercises.length;
+    const closeBtn = canClose
+      ? `<button class="btn primary big" data-act="close">${day.closed ? '📊 오늘 결과 보기' : '🌟 오늘 마감'}</button>`
+      : '';
+    return `<header class="home-head"><span class="icon-btn-space"></span>${brand()}
+        <button class="icon-btn" data-act="settings" aria-label="설정">⚙️</button></header>
       <main class="screen home">
         <p class="date">${prettyDate()}</p>
         <h1 class="hello">${h(data.profile.name)}, 오늘 뭐 먹었어?</h1>
@@ -213,6 +220,7 @@ const home = {
           <span class="card-sub">${minutes ? `오늘 ${minutes}분 움직였어요` : '기록하기'}</span>
           ${minutes ? '<span class="check">✓</span>' : ''}
         </button>
+        ${closeBtn}
       </main>`;
   },
   acts: {
@@ -221,6 +229,13 @@ const home = {
       go({ name: 'meal', mealId: d.id, items: existing.map((x) => ({ ...x })), query: '', original: existing.length });
     },
     exercise() { go({ name: 'exercise', step: 1 }); },
+    close() {
+      const day = getDay(todayKey());
+      day.closed = true;
+      save();
+      go({ name: 'result', key: todayKey() });
+    },
+    settings() { go({ name: 'settings' }); },
     body() {
       const last = [...getData().body].reverse();
       const w = last.find((b) => b.weight)?.weight ?? BODY_START.weight;
@@ -525,7 +540,82 @@ const celebrateView = {
   },
 };
 
-const VIEWS = { onboarding, home, meal, newMenu, exercise, body, celebrate: celebrateView };
+// ---------- 하루 결과 ----------
+
+const fmt = (n) => Math.round(n).toLocaleString('ko-KR');
+const signed = (n) => (n > 0 ? `+${fmt(n)}` : n < 0 ? `−${fmt(-n)}` : '0');
+
+const result = {
+  html(s) {
+    const r = dayResult(getData(), s.key);
+    const groups = ['v', 'f', 'p', 'd'].map((g) => {
+      const on = r.groups.has(g);
+      return `<div class="group ${on ? 'on' : ''}"><span class="group-emoji">${FOOD_GROUPS[g].emoji}</span>
+        <span>${FOOD_GROUPS[g].label}</span><span class="group-mark">${on ? '✓' : ''}</span></div>`;
+    }).join('');
+    const isToday = s.key === todayKey();
+    return `${topBar({ title: isToday ? '오늘 결과' : prettyDate(parseKey(s.key)) })}
+      <main class="screen result">
+        <div class="bubble">${h(pickPhrase(r, s.key))}</div>
+        <section class="card result-card">
+          <div class="r-row"><span>🍽️ 먹은 에너지</span><b>${fmt(r.intake)} kcal</b></div>
+          <div class="r-row"><span>🏃 움직여서 쓴 에너지</span><b>${fmt(r.burned)} kcal</b></div>
+          <div class="r-row"><span>🔋 기본으로 쓰는 에너지</span><b>${fmt(r.base)} kcal</b></div>
+          <div class="r-row total"><span>⚖️ 오늘의 균형</span><b>${signed(r.balance)} kcal</b></div>
+          <p class="r-note">먹은 에너지에서 쓴 에너지(기본 + 운동)를 뺀 값이에요. 모두 대략이라서 하루 숫자보다 한 주 흐름을 보는 데 써요.</p>
+          ${r.burned && !r.weightMeasured ? '<p class="r-note">체중 기록 전이라 같은 나이 평균 체중으로 계산했어요.</p>' : ''}
+        </section>
+        <h2 class="sub">오늘 먹은 식품군</h2>
+        <div class="groups">${groups}</div>
+        <button class="btn primary big" data-act="back">${isToday ? '홈으로' : '돌아가기'}</button>
+      </main>`;
+  },
+  acts: { back: () => goHome() },
+};
+
+// ---------- 설정 ----------
+
+const settings = {
+  html() {
+    const p = getData().profile;
+    const rec = recommendedBaseline(p);
+    const cur = baseline(p);
+    return `${topBar({ title: '설정' })}
+      <main class="screen">
+        <section class="card settings-card">
+          <div class="card-title">${h(p.name)}</div>
+          <p class="card-sub">${p.birthYear}년 ${p.birthMonth}월생 · 만 ${ageYears(p, new Date())}세 · ${p.sex === 'M' ? '남자' : '여자'}</p>
+        </section>
+        <section class="card settings-card">
+          <div class="card-title">하루 기본 에너지</div>
+          <p class="card-sub wrap">나이와 성별로 추천한 값은 ${fmt(rec)} kcal예요. 필요하면 바꿀 수 있어요.</p>
+          <div class="stepper three">
+            <button class="btn step-btn" data-act="base" data-d="-1">−${BASELINE_STEP}</button>
+            <div class="step-value">${fmt(cur)}<small>kcal</small></div>
+            <button class="btn step-btn" data-act="base" data-d="1">+${BASELINE_STEP}</button>
+          </div>
+          ${p.baseline ? '<button class="btn ghost" data-act="baseReset">추천값으로 되돌리기</button>' : ''}
+        </section>
+      </main>`;
+  },
+  acts: {
+    back: () => goHome(),
+    base(s, d) {
+      const p = getData().profile;
+      const next = Math.min(4000, Math.max(800, baseline(p) + Number(d.d) * BASELINE_STEP));
+      p.baseline = next === recommendedBaseline(p) ? null : next;
+      save();
+      render();
+    },
+    baseReset() {
+      getData().profile.baseline = null;
+      save();
+      render();
+    },
+  },
+};
+
+const VIEWS = { onboarding, home, meal, newMenu, exercise, body, result, settings, celebrate: celebrateView };
 
 // ---------- 시작 ----------
 
