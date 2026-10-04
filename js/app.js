@@ -8,7 +8,7 @@ import { weeklySeries, recordedWeekCount, bodyPoints, monthSummary, lastWeekStar
 import { hasApiKey, setApiKey, estimateMenu, writeReview, testConnection } from './claude.js';
 import { loadTable, bmiValue, percentile, inChildRange } from './bmi.js';
 import { weeklyCharts, bmiChart, monthCharts } from './charts.js';
-import { pickPhrase } from './phrases.js';
+import { pickPhrase, nextGreeting } from './phrases.js';
 import { streakInfo } from './streak.js';
 import { BADGES, awardBadges } from './badges.js';
 import { playCheer } from './sound.js';
@@ -93,6 +93,16 @@ document.addEventListener('touchmove', (e) => {
   const atBottom = sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 1;
   if ((dy > 0 && atTop) || (dy < 0 && atBottom)) e.preventDefault();
 }, { passive: false });
+
+// 입력하는 동안에는 아래쪽 저장 버튼을 숨겨 키보드 위로 따라 올라오지 않게 한다
+app.addEventListener('focusin', (e) => {
+  if (e.target.matches('input')) app.classList.add('typing');
+});
+app.addEventListener('focusout', () => {
+  setTimeout(() => {
+    if (!app.contains(document.activeElement) || !document.activeElement.matches('input')) app.classList.remove('typing');
+  }, 50);
+});
 
 // 입력칸을 누르면 그 칸이 보이는 곳으로 스크롤한다
 app.addEventListener('focusin', (e) => {
@@ -268,8 +278,10 @@ function streakCard(data, st, act) {
 }
 
 const home = {
-  html() {
+  html(s) {
     const data = getData();
+    // 홈에 새로 들어올 때만 인사말을 바꾸고, 같은 홈을 다시 그릴 때는 그대로 둔다
+    if (!s.greeting) s.greeting = nextGreeting(data.profile.name);
     const day = getDay(todayKey());
     const mealCards = MEALS.map((m) => {
       const items = day.meals[m.id] || [];
@@ -318,7 +330,7 @@ const home = {
         <button class="icon-btn" data-act="settings" aria-label="설정">⚙️</button></header>
       <main class="screen home">
         <p class="date">${prettyDate()}</p>
-        <h1 class="hello">${h(data.profile.name)}, 오늘 뭐 먹었어?</h1>
+        <h1 class="hello">${h(s.greeting)}</h1>
         ${yesterdayCard}
         ${statusRow}
         ${bodyCard}
