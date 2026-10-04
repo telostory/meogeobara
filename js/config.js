@@ -111,3 +111,6 @@ export const GRAPH_WEEKS = 8;
 // 스트릭 프리즈: 처음에 가진 개수(최대 개수)와 다시 채워지는 연속 기록 일수
 export const FREEZE_MAX = 1;
 export const FREEZE_REFILL_DAYS = 7;
+
+// 기록한 날이 이보다 적은 주는 Claude를 부르지 않고 고정 문구를 보여준다
+export const REVIEW_MIN_DAYS = 3;

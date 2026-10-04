@@ -563,3 +563,32 @@ button.card:active { transform: translateY(3px); border-bottom-width: 2px; margi
 .seg.full { width: 100%; grid-template-columns: 1fr 1fr; }
 .today-progress .progress { flex: 1; width: auto; }
 .celebrate > :not(.confetti) { position: relative; z-index: 1; }
+
+/* ---------- Claude ---------- */
+
+.center-screen { justify-content: center; align-items: center; }
+.center-card { align-items: center; padding: 28px 16px; }
+
+.thinking { display: flex; gap: 10px; justify-content: center; }
+.thinking i { width: 16px; height: 16px; border-radius: 50%; background: var(--grass); animation: bounce 1s infinite ease-in-out; }
+.thinking i:nth-child(2) { animation-delay: 0.15s; background: var(--fur); }
+.thinking i:nth-child(3) { animation-delay: 0.3s; background: var(--yellow); }
+@keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+
+.review-card { width: 100%; background: var(--yellow-soft); border-color: var(--yellow); }
+.review-bubble { text-align: left; font-size: 18px; font-weight: 700; line-height: 1.7; }
+.review-text { margin: 0; font-size: 16px; line-height: 1.7; }
+.muted { font-size: 14px; font-weight: 600; color: var(--fur-dark); }
+.hint.left { text-align: left; }
+
+.week-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.week-stats div { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 4px; border-radius: var(--radius); background: var(--white); border: 2px solid var(--line); }
+.week-stats b { font-size: 20px; }
+.week-stats span { font-size: 13px; color: var(--fur-dark); font-weight: 700; }
+
+.past-reviews { width: 100%; font-size: 15px; }
+.past-reviews summary { cursor: pointer; font-weight: 700; color: var(--fur-dark); padding: 6px 0; }
+.past-review { padding: 8px 0; border-top: 2px dashed var(--line); }
+.past-review p { margin: 4px 0 0; line-height: 1.6; }
+@media (prefers-reduced-motion: reduce) { .thinking i { animation: none; } }
+.settings-card .row .btn { white-space: nowrap; font-size: 18px; padding: 10px 8px; }

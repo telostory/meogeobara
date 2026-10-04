@@ -1,8 +1,11 @@
 // 캘린더, 주간 그래프, 월간 요약에 쓰는 묶음 계산
 
-import { WEEK_START } from './config.js';
+import { WEEK_START, MEALS, INTENSITIES } from './config.js';
 import { dayResult, hasMeal, intakeKcal, ageMonths } from './calc.js';
 import { dateKey, parseKey, weekStartKey } from './util.js';
+
+const MEAL_LABEL = Object.fromEntries(MEALS.map((m) => [m.id, m.label]));
+const INTENSITY_LABEL = Object.fromEntries(INTENSITIES.map((i) => [i.id, i.label]));
 
 function addDays(key, n) {
   const d = parseKey(key);
@@ -83,5 +86,60 @@ export function monthSummary(data, year, month) {
     exMinutes,
     weight: change(weights, 'weight'),
     height: change(heights, 'height'),
+  };
+}
+
+const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
+
+// 지난주 시작 날짜 키 (오늘이 속한 주의 바로 앞 주)
+export function lastWeekStart(today = new Date()) {
+  return addDays(weekStartKey(today, WEEK_START), -7);
+}
+
+export function weekEnd(start) {
+  return addDays(start, 6);
+}
+
+// 한 주 요약 숫자와, Claude에게 보낼 기록 글.
+// 이름, 체중, 키는 넣지 않는다.
+export function weekDigest(data, start) {
+  const lines = [];
+  let recordedDays = 0;
+  let vegDays = 0;
+  let fruitDays = 0;
+  let exMinutes = 0;
+  const balances = [];
+  for (let i = 0; i < 7; i += 1) {
+    const key = addDays(start, i);
+    const day = data.days[key];
+    const wd = WEEKDAY[parseKey(key).getDay()];
+    if (!hasMeal(day) && !(day?.exercises || []).length) {
+      lines.push(`${wd}요일: 기록 없음`);
+      continue;
+    }
+    const r = dayResult(data, key);
+    if (hasMeal(day)) {
+      recordedDays += 1;
+      balances.push(r.balance);
+    }
+    if (r.groups.has('v')) vegDays += 1;
+    if (r.groups.has('f')) fruitDays += 1;
+    exMinutes += r.minutes;
+    const meals = Object.entries(day.meals || {})
+      .filter(([, items]) => items.length)
+      .map(([m, items]) => `${MEAL_LABEL[m]} ${items.map((it) => it.name).join(', ')}`)
+      .join(' / ');
+    const ex = (day.exercises || []).map((x) => `${INTENSITY_LABEL[x.intensity]} ${x.minutes}분`).join(', ');
+    lines.push(`${wd}요일: ${meals || '식사 기록 없음'} | 운동: ${ex || '없음'} | 균형: ${r.balance > 0 ? '+' : ''}${r.balance}`);
+  }
+  return {
+    start,
+    end: weekEnd(start),
+    recordedDays,
+    vegDays,
+    fruitDays,
+    exMinutes,
+    avgBalance: balances.length ? Math.round(balances.reduce((a, b) => a + b, 0) / balances.length) : null,
+    text: lines.join('\n'),
   };
 }

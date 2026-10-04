@@ -4,14 +4,15 @@ import {
   SEARCH_RESULT_COUNT, CELEBRATE_MS, BODY_START, BASELINE_STEP, FOOD_GROUPS, FREEZE_REFILL_DAYS,
 } from './config.js';
 import { dayResult, hasMeal, recommendedBaseline, baseline, ageYears, ageMonths, itemKcal } from './calc.js';
-import { weeklySeries, recordedWeekCount, bodyPoints, monthSummary } from './progress.js';
+import { weeklySeries, recordedWeekCount, bodyPoints, monthSummary, lastWeekStart, weekDigest } from './progress.js';
+import { hasApiKey, setApiKey, estimateMenu, writeReview, testConnection } from './claude.js';
 import { loadTable, bmiValue, percentile, inChildRange } from './bmi.js';
 import { weeklyCharts, bmiChart } from './charts.js';
 import { pickPhrase } from './phrases.js';
 import { streakInfo } from './streak.js';
 import { BADGES, awardBadges } from './badges.js';
 import { playCheer } from './sound.js';
-import { WEEKS_FOR_GRAPH, GRAPH_WEEKS } from './config.js';
+import { WEEKS_FOR_GRAPH, GRAPH_WEEKS, REVIEW_MIN_DAYS } from './config.js';
 import { BASE_MENUS, STARTER_TAGS } from './menus.js';
 import { getData, getDay, save } from './storage.js';
 import { dateKey, parseKey, prettyDate, escapeHtml as h, matchesQuery } from './util.js';
@@ -226,6 +227,14 @@ const home = {
           </div>
         </div>`
       : '';
+    const isReviewDay = new Date().getDay() === WEEK_START;
+    const reviewCard = isReviewDay
+      ? `<button class="card review-card" data-act="review">
+          <span class="card-emoji">📝</span>
+          <span class="card-title">지난주 돌아보기</span>
+          <span class="card-sub">${data.reviews?.[lastWeekStart()] ? '리뷰 다시 보기' : '지난 한 주는 어땠을까?'}</span>
+        </button>`
+      : '';
     const canClose = hasMeal(day) || day.exercises.length;
     const closeBtn = canClose
       ? `<button class="btn primary big" data-act="close">${day.closed ? '📊 오늘 결과 보기' : '🌟 오늘 마감'}</button>`
@@ -237,6 +246,7 @@ const home = {
         <h1 class="hello">${h(data.profile.name)}, 오늘 뭐 먹었어?</h1>
         ${statusRow}
         ${bodyCard}
+        ${reviewCard}
         <div class="meal-grid">${mealCards}</div>
         <button class="card exercise-card ${minutes ? 'done' : ''}" data-act="exercise">
           <span class="card-emoji">🏃</span>
@@ -261,6 +271,7 @@ const home = {
     },
     settings() { go({ name: 'settings' }); },
     badges() { go({ name: 'badges' }); },
+    review() { go({ name: 'review', key: lastWeekStart() }); },
     calendar() {
       const now = new Date();
       go({ name: 'calendar', year: now.getFullYear(), month: now.getMonth(), week: null });
@@ -376,7 +387,21 @@ const meal = {
     portion(s, d) { s.items[Number(d.idx)].portion = d.p; render(); },
     remove(s, d) { s.items.splice(Number(d.idx), 1); render(); },
     newMenu(s) {
-      go({ name: 'newMenu', menuName: s.query.trim(), mealState: s });
+      const menuName = s.query.trim();
+      if (!hasApiKey()) {
+        go({ name: 'newMenu', menuName, mealState: s });
+        return;
+      }
+      go({ name: 'newMenu', menuName, mealState: s, asking: true });
+      estimateMenu(menuName).then((est) => {
+        if (screen.name !== 'newMenu' || screen.menuName !== menuName) return;
+        if (est) saveNewMenu(screen, { kcal: est.kcal, groups: est.groups, source: 'claude' });
+        else {
+          screen.asking = false;
+          screen.failed = true;
+          render();
+        }
+      });
     },
     save(s) {
       const data = getData();
@@ -406,10 +431,31 @@ const meal = {
 
 // ---------- 새 메뉴 ----------
 
+function saveNewMenu(s, { kcal, groups, source }) {
+  const menu = { id: `c:${s.menuName}`, name: s.menuName, kcal, groups, source };
+  const data = getData();
+  data.customMenus = data.customMenus.filter((m) => m.id !== menu.id);
+  data.customMenus.unshift(menu);
+  save();
+  const ms = s.mealState;
+  ms.query = '';
+  addItem(ms, menu);
+  go(ms);
+}
+
 const newMenu = {
   html(s) {
+    if (s.asking) {
+      return `${topBar({ title: '새 메뉴' })}
+        <main class="screen center-screen">
+          <div class="thinking" aria-hidden="true"><i></i><i></i><i></i></div>
+          <h1 class="q">'${h(s.menuName)}'<br>알아보는 중이야</h1>
+          <p class="hint">잠깐만 기다려 줘</p>
+        </main>`;
+    }
     return `${topBar({ title: '새 메뉴' })}
       <main class="screen">
+        ${s.failed ? '<p class="hint">이번엔 알아보지 못했어. 크기를 골라 줘!</p>' : ''}
         <h1 class="q">'${h(s.menuName)}'<br>얼마나 큰 메뉴야?</h1>
         <div class="stack">
           ${NEW_MENU_SIZES.map((z) => `<button class="btn choice big" data-act="size" data-id="${z.id}">${z.emoji} ${z.label}</button>`).join('')}
@@ -421,15 +467,7 @@ const newMenu = {
     back(s) { go(s.mealState); },
     size(s, d) {
       const z = NEW_MENU_SIZES.find((x) => x.id === d.id);
-      const menu = { id: `c:${s.menuName}`, name: s.menuName, kcal: z.kcal, groups: '', source: 'size' };
-      const data = getData();
-      data.customMenus = data.customMenus.filter((m) => m.id !== menu.id);
-      data.customMenus.unshift(menu);
-      save();
-      const ms = s.mealState;
-      ms.query = '';
-      addItem(ms, menu);
-      go(ms);
+      saveNewMenu(s, { kcal: z.kcal, groups: '', source: 'size' });
     },
   },
 };
@@ -709,10 +747,33 @@ function weeklySection(s) {
   </section>`;
 }
 
-function reviewSection() {
+function weekRange(start) {
+  const [, m1, d1] = start.split('-').map(Number);
+  const e = parseKey(start);
+  e.setDate(e.getDate() + 6);
+  return `${m1}/${d1}~${e.getMonth() + 1}/${e.getDate()}`;
+}
+
+function reviewSection(s) {
+  const data = getData();
+  const lw = lastWeekStart();
+  let target = lw;
+  if (s.week !== null) {
+    const w = weeklySeries(data, GRAPH_WEEKS)[s.week];
+    if (w && w.start <= lw) target = w.start;
+  }
+  const stored = data.reviews?.[target];
+  const past = Object.keys(data.reviews || {}).filter((k) => k !== target).sort().reverse();
+  const body = stored
+    ? `<p class="review-text">${h(stored.text)}</p>`
+    : `<p class="card-sub wrap">이 주의 리뷰는 아직 없어요.</p>
+       <button class="btn" data-act="review" data-key="${target}">📝 ${weekRange(target)} 돌아보기</button>`;
   return `<section class="card chart-card">
-    <div class="card-title">주간 리뷰</div>
-    <p class="card-sub wrap">일요일마다 지난 한 주(일~토)를 돌아보는 리뷰가 여기에 쌓여요. 리뷰는 Claude를 연결한 뒤부터 만들어져요.</p>
+    <div class="card-title">주간 리뷰 <small class="muted">${weekRange(target)}</small></div>
+    ${body}
+    ${past.length ? `<details class="past-reviews"><summary>지난 리뷰 ${past.length}개</summary>
+      ${past.map((k) => `<div class="past-review"><b>${weekRange(k)}</b><p>${h(data.reviews[k].text)}</p></div>`).join('')}
+    </details>` : ''}
   </section>`;
 }
 
@@ -760,7 +821,7 @@ const calendar = {
           <p class="cal-legend">🍚 식사 · 🏃 운동 · 🧊 프리즈 · <i class="cal-dot"></i> 체중</p></section>
         <button class="btn big" data-act="summary">📋 ${s.month + 1}월 요약 보기</button>
         ${weeklySection(s)}
-        ${reviewSection()}
+        ${reviewSection(s)}
         <section class="card chart-card" id="bmi"><div class="card-title">BMI</div><p class="card-sub">불러오는 중…</p></section>
       </main>`;
   },
@@ -782,6 +843,68 @@ const calendar = {
       window.scrollTo(0, y);
     },
     summary(s) { go({ name: 'summary', year: s.year, month: s.month, from: s }); },
+    review(s, d) { go({ name: 'review', key: d.key, from: s }); },
+  },
+};
+
+// ---------- 주간 리뷰 ----------
+
+const SHORT_WEEK_TEXT = `이 주는 기록한 날이 ${REVIEW_MIN_DAYS}일보다 적어서 리뷰를 쉬어 가요. 이번 주에 ${REVIEW_MIN_DAYS}일 넘게 기록하면 다음 일요일에 리뷰가 찾아와요!`;
+
+const review = {
+  html(s) {
+    const data = getData();
+    const dg = weekDigest(data, s.key);
+    const stored = data.reviews?.[s.key];
+    const stats = `<div class="week-stats">
+      <div><b>${dg.recordedDays}일</b><span>기록한 날</span></div>
+      <div><b>${dg.vegDays}일</b><span>🥦 채소</span></div>
+      <div><b>${dg.fruitDays}일</b><span>🍎 과일</span></div>
+      <div><b>${dg.exMinutes}분</b><span>🏃 운동</span></div>
+    </div>`;
+    let body;
+    if (stored) {
+      body = `<div class="bubble review-bubble">${h(stored.text)}</div>`;
+    } else if (dg.recordedDays < REVIEW_MIN_DAYS) {
+      body = `<div class="bubble review-bubble">${SHORT_WEEK_TEXT}</div>`;
+    } else if (s.asking) {
+      body = `<div class="card center-card"><div class="thinking" aria-hidden="true"><i></i><i></i><i></i></div>
+        <p class="hint">지난주 기록을 읽는 중이야…</p></div>`;
+    } else {
+      const why = hasApiKey() ? '이번엔 리뷰를 받아 오지 못했어요. 다음에 다시 열어 보세요.' : '리뷰는 설정에서 Claude 키를 넣으면 만들어져요.';
+      body = `<p class="hint">${why}</p>
+        <section class="card chart-card"><div class="card-title">한 주 흐름</div>
+          ${weeklyCharts(weeklySeries(data, GRAPH_WEEKS), null)}</section>
+        ${hasApiKey() ? '<button class="btn big" data-act="retry">다시 해 보기</button>' : ''}`;
+    }
+    return `${topBar({ title: `${weekRange(s.key)} 돌아보기` })}
+      <main class="screen">
+        ${stats}
+        ${body}
+        <button class="btn primary big" data-act="back">${s.from ? '돌아가기' : '홈으로'}</button>
+      </main>`;
+  },
+  mount(s) {
+    const data = getData();
+    if (s.tried || data.reviews?.[s.key] || !hasApiKey()) return;
+    const dg = weekDigest(data, s.key);
+    if (dg.recordedDays < REVIEW_MIN_DAYS) return;
+    s.tried = true;
+    s.asking = true;
+    render();
+    writeReview(dg.text).then((text) => {
+      if (text) {
+        if (!data.reviews) data.reviews = {};
+        data.reviews[s.key] = { text, at: Date.now() };
+        save();
+      }
+      s.asking = false;
+      if (screen === s) render();
+    });
+  },
+  acts: {
+    back(s) { if (s.from) go(s.from); else goHome(); },
+    retry(s) { s.tried = false; render(); },
   },
 };
 
@@ -851,7 +974,7 @@ const badgesView = {
 // ---------- 설정 ----------
 
 const settings = {
-  html() {
+  html(s) {
     const p = getData().profile;
     const rec = recommendedBaseline(p);
     const cur = baseline(p);
@@ -872,6 +995,19 @@ const settings = {
           ${p.baseline ? '<button class="btn ghost" data-act="baseReset">추천값으로 되돌리기</button>' : ''}
         </section>
         <section class="card settings-card">
+          <div class="card-title">Claude 연결</div>
+          ${hasApiKey()
+            ? `<p class="card-sub wrap">✅ API 키가 저장되어 있어요. 키는 다시 보여주지 않아요.</p>
+               <div class="row">
+                 <button class="btn" data-act="testKey">연결 확인</button>
+                 <button class="btn ghost" data-act="removeKey">키 지우기</button>
+               </div>`
+            : `<p class="card-sub wrap">부모님이 이 앱 전용 키를 한 번 넣어 주세요. 키가 없어도 기록은 모두 돼요.</p>
+               <input id="apikey" class="text-input" type="password" autocomplete="off" placeholder="sk-ant-...">
+               <button class="btn primary" data-act="saveKey">저장</button>`}
+          ${s.keyMsg ? `<p class="hint left">${h(s.keyMsg)}</p>` : ''}
+        </section>
+        <section class="card settings-card">
           <div class="card-title">효과음</div>
           <div class="seg full">
             <button class="seg-btn ${soundOn() ? 'on' : ''}" data-act="sound" data-v="1">🔔 켜기</button>
@@ -889,6 +1025,25 @@ const settings = {
       save();
       render();
     },
+    saveKey(s) {
+      const v = document.getElementById('apikey').value.trim();
+      if (!v) return;
+      setApiKey(v);
+      s.keyMsg = '저장했어요. 연결 확인을 눌러 보세요.';
+      render();
+    },
+    removeKey(s) {
+      setApiKey(null);
+      s.keyMsg = '키를 지웠어요.';
+      render();
+    },
+    async testKey(s) {
+      s.keyMsg = '확인하는 중…';
+      render();
+      const r = await testConnection();
+      s.keyMsg = r.ok ? '✅ Claude와 연결됐어요!' : (r.kind === 'auth' ? '키가 맞지 않아요. 지우고 다시 넣어 주세요.' : `연결하지 못했어요. (${r.message})`);
+      if (screen === s) render();
+    },
     sound(s, d) {
       const data = getData();
       data.settings = { ...(data.settings || {}), sound: d.v === '1' };
@@ -904,7 +1059,7 @@ const settings = {
   },
 };
 
-const VIEWS = { onboarding, home, meal, newMenu, exercise, body, result, settings, calendar, summary, badges: badgesView, celebrate: celebrateView };
+const VIEWS = { onboarding, home, meal, newMenu, exercise, body, result, settings, calendar, summary, review, badges: badgesView, celebrate: celebrateView };
 
 // ---------- 시작 ----------
 

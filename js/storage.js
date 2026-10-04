@@ -13,6 +13,7 @@ function emptyData() {
     bodySkip: null, // 체중 카드를 '다음에'로 넘긴 날짜
     badges: {}, // 뱃지 id: 받은 날짜
     settings: { sound: true },
+    reviews: {}, // 주 시작 날짜: { text, at } (Claude 주간 리뷰)
   };
 }
 
