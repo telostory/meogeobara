@@ -14,6 +14,7 @@ function emptyData() {
     badges: {}, // 뱃지 id: 받은 날짜
     settings: { sound: true },
     reviews: {}, // 주 시작 날짜: { text, at } (Claude 주간 리뷰)
+    dayFeedback: {}, // 날짜: { text, sig, at } (Claude 하루 피드백)
   };
 }
 

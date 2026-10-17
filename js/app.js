@@ -4,8 +4,8 @@ import {
   SEARCH_RESULT_COUNT, CELEBRATE_MS, BASELINE_STEP, FOOD_GROUPS, STREAK_MILESTONES,
 } from './config.js';
 import { dayResult, hasMeal, recommendedBaseline, baseline, ageYears, ageMonths, itemKcal } from './calc.js';
-import { weeklySeries, recordedWeekCount, bodyPoints, monthSummary, lastWeekStart, weekDigest, monthDaily } from './progress.js';
-import { hasApiKey, setApiKey, estimateMenu, writeReview, testConnection } from './claude.js';
+import { weeklySeries, recordedWeekCount, bodyPoints, monthSummary, lastWeekStart, weekDigest, monthDaily, dayDigest } from './progress.js';
+import { hasApiKey, setApiKey, estimateMenu, writeReview, writeDayFeedback, testConnection } from './claude.js';
 import { loadTable, bmiValue, percentile, inChildRange } from './bmi.js';
 import { weeklyCharts, bmiChart, monthCharts } from './charts.js';
 import { pickPhrase, nextGreeting } from './phrases.js';
@@ -340,7 +340,74 @@ function streakCard(data, st, act) {
     </${tag}>`;
 }
 
+// ---------- 하루 피드백 (Claude) ----------
+// 하루가 끝나면(오늘을 마감했거나 날짜가 바뀌면) 그날 기록으로 Claude 피드백을 받아 저장한다.
+// 기록이 바뀌면(sig가 달라지면) 오늘·어제에 한해 다시 받는다. 키가 없거나 실패하면 아무것도 보여주지 않는다.
+
+const feedbackPending = new Set();
+const feedbackFailed = new Set();
+
+function yesterdayKey() {
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  return dateKey(y);
+}
+
+function feedbackEligible(key) {
+  const day = getData().days[key];
+  if (!hasApiKey() || !hasMeal(day)) return false;
+  if (key === todayKey()) return Boolean(day.closed);
+  return key === yesterdayKey();
+}
+
+function ensureFeedback(key) {
+  if (!feedbackEligible(key) || feedbackPending.has(key)) return;
+  const data = getData();
+  const sig = dayDigest(data, key);
+  const fb = data.dayFeedback?.[key];
+  if ((fb && fb.sig === sig) || feedbackFailed.has(`${key}|${sig}`)) return;
+  feedbackPending.add(key);
+  writeDayFeedback(sig).then((text) => {
+    feedbackPending.delete(key);
+    if (text) {
+      if (!data.dayFeedback) data.dayFeedback = {};
+      data.dayFeedback[key] = { text, sig, at: Date.now() };
+      save();
+    } else {
+      feedbackFailed.add(`${key}|${sig}`);
+    }
+    if (screen && (screen.name === 'home' || (screen.name === 'result' && screen.key === key))) render();
+  });
+}
+
+// 저장된 피드백 글, 받아 오는 중 표시, 또는 빈 문자열
+function feedbackInner(key) {
+  const data = getData();
+  const fb = data.dayFeedback?.[key];
+  const eligible = feedbackEligible(key);
+  const sig = eligible ? dayDigest(data, key) : null;
+  const willFetch = eligible && (!fb || fb.sig !== sig) && !feedbackFailed.has(`${key}|${sig}`);
+  const text = fb ? `<p class="fb-text">${h(fb.text)}</p>` : '';
+  if (feedbackPending.has(key) || willFetch) {
+    return `${text}<div class="fb-wait"><div class="thinking small" aria-hidden="true"><i></i><i></i><i></i></div><span>Claude가 하루를 읽는 중…</span></div>`;
+  }
+  return text;
+}
+
+function yesterdayCardHtml(yDay) {
+  const key = yesterdayKey();
+  if (!hasMeal(yDay) && !(yDay?.exercises || []).length) return '';
+  const inner = feedbackInner(key);
+  if (!inner && yDay.closed) return '';
+  return `<section class="card yesterday-card">
+      <div class="fb-head"><span class="card-emoji">🌙</span><span class="card-title">어제 돌아보기</span></div>
+      ${inner || '<p class="card-sub wrap">어제 결과를 아직 안 봤어요.</p>'}
+      <button class="btn ${yDay.closed ? '' : 'primary'}" data-act="closeYesterday">${yDay.closed ? '어제 결과 보기' : '어제 마감하고 결과 보기'}</button>
+    </section>`;
+}
+
 const home = {
+  mount() { ensureFeedback(yesterdayKey()); },
   html(s) {
     const data = getData();
     // 홈에 새로 들어올 때만 인사말을 바꾸고, 같은 홈을 다시 그릴 때는 그대로 둔다
@@ -361,13 +428,7 @@ const home = {
     const y = new Date();
     y.setDate(y.getDate() - 1);
     const yDay = data.days[dateKey(y)];
-    const yesterdayCard = (hasMeal(yDay) || (yDay?.exercises || []).length) && !yDay.closed
-      ? `<button class="card yesterday-card" data-act="closeYesterday">
-          <span class="card-emoji">🌙</span>
-          <span class="card-title">어제 결과를 아직 안 봤어요</span>
-          <span class="card-sub">어제 하루를 마감하고 결과 보기</span>
-        </button>`
-      : '';
+    const yesterdayCard = yesterdayCardHtml(yDay);
     const tasks = ['breakfast', 'lunch', 'dinner'].map((m) => (day.meals[m] || []).length > 0).concat(minutes > 0);
     const doneCount = tasks.filter(Boolean).length;
     const statusRow = `${streakCard(data, st, 'badges')}
@@ -419,9 +480,9 @@ const home = {
       else closeDay(todayKey());
     },
     closeYesterday() {
-      const y = new Date();
-      y.setDate(y.getDate() - 1);
-      closeDay(dateKey(y));
+      const key = yesterdayKey();
+      if (getData().days[key]?.closed) go({ name: 'result', key });
+      else closeDay(key);
     },
     settings() { go({ name: 'settings' }); },
     badges() { go({ name: 'badges' }); },
@@ -766,6 +827,7 @@ function closeDay(key) {
   const badges = awardBadges(data, todayKey());
   save();
   if (soundOn()) playCheer(true);
+  ensureFeedback(key);
   go({ name: 'celebrate', key, badges: badges.map((b) => b.id) });
 }
 
@@ -820,6 +882,7 @@ function dayRecordsHtml(day) {
 }
 
 const result = {
+  mount(s) { ensureFeedback(s.key); },
   html(s) {
     const data = getData();
     const day = data.days[s.key];
@@ -843,6 +906,10 @@ const result = {
     return `${topBar({ title })}
       <main class="screen result">
         <div class="bubble">${h(isToday ? pickPhrase(r, s.key) : pickPhrase(r, s.key).replace(/오늘/g, '이 날'))}</div>
+        ${(() => {
+          const inner = feedbackInner(s.key);
+          return inner ? `<section class="card fb-card"><div class="fb-head">💬 <b>Claude의 하루 피드백</b></div>${inner}</section>` : '';
+        })()}
         <section class="card result-card">
           <div class="r-row"><span>🍽️ 먹은 에너지</span><b data-count="${r.intake}" data-suffix=" kcal">${fmt(r.intake)} kcal</b></div>
           <div class="r-row"><span>🏃 움직여서 쓴 에너지</span><b data-count="${r.burned}" data-suffix=" kcal">${fmt(r.burned)} kcal</b></div>

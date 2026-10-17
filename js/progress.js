@@ -1,6 +1,6 @@
 // 캘린더, 주간 그래프, 월간 요약에 쓰는 묶음 계산
 
-import { WEEK_START, MEALS, INTENSITIES } from './config.js';
+import { WEEK_START, MEALS, INTENSITIES, PORTIONS, LEGACY_PORTIONS } from './config.js';
 import { dayResult, hasMeal, intakeKcal, ageMonths } from './calc.js';
 import { dateKey, parseKey, weekStartKey } from './util.js';
 
@@ -160,4 +160,27 @@ export function monthDaily(data, year, month, today = dateKey(new Date())) {
     });
   }
   return out;
+}
+
+// 하루 기록 요약 글 (하루 피드백용). 이름, 체중, 키는 넣지 않는다.
+export function dayDigest(data, key) {
+  const day = data.days[key];
+  const r = dayResult(data, key);
+  const lines = [`${WEEKDAY[parseKey(key).getDay()]}요일 기록`];
+  for (const m of MEALS) {
+    const items = day?.meals?.[m.id] || [];
+    lines.push(`${m.label}: ${items.length ? items.map((it) => `${it.name}(${portionName(it.portion)})`).join(', ') : '기록 없음'}`);
+  }
+  const ex = (day?.exercises || []).map((x) => `${INTENSITY_LABEL[x.intensity]} ${x.minutes}분`).join(', ');
+  lines.push(`운동: ${ex || '없음'}`);
+  const groupNames = { v: '채소', f: '과일', p: '단백질', d: '유제품' };
+  const eaten = Object.keys(groupNames).filter((g) => r.groups.has(g)).map((g) => groupNames[g]);
+  lines.push(`먹은 식품군: ${eaten.length ? eaten.join(', ') : '없음'}`);
+  lines.push(`먹은 양: 기준의 약 ${Math.round((r.intake / r.base) * 100)}%`);
+  lines.push(`연속 기록: ${r.streak}일`);
+  return lines.join('\n');
+}
+
+function portionName(id) {
+  return [...PORTIONS, ...LEGACY_PORTIONS].find((p) => p.id === id)?.label || '보통';
 }

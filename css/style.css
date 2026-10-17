@@ -831,3 +831,13 @@ button.card:active { transform: translateY(3px); border-bottom-width: 2px; margi
     animation: none !important;
   }
 }
+
+/* ---------- 하루 피드백 ---------- */
+
+.fb-card, .yesterday-card { width: 100%; gap: 10px; background: var(--yellow-soft); border-color: var(--fur); }
+.fb-head { display: flex; align-items: center; gap: 8px; font-size: 17px; }
+.fb-head .card-emoji { font-size: 26px; }
+.fb-text { margin: 0; font-size: 17px; line-height: 1.7; animation: rise 0.4s ease both; }
+.fb-wait { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--fur-dark); }
+.thinking.small i { width: 10px; height: 10px; }
+.yesterday-card .btn { width: 100%; }
