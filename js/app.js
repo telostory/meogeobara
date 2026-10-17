@@ -389,7 +389,7 @@ function feedbackInner(key) {
   const willFetch = eligible && (!fb || fb.sig !== sig) && !feedbackFailed.has(`${key}|${sig}`);
   const text = fb ? `<p class="fb-text">${h(fb.text)}</p>` : '';
   if (feedbackPending.has(key) || willFetch) {
-    return `${text}<div class="fb-wait"><div class="thinking small" aria-hidden="true"><i></i><i></i><i></i></div><span>Claude가 하루를 읽는 중…</span></div>`;
+    return `${text}<div class="fb-wait"><div class="thinking small" aria-hidden="true"><i></i><i></i><i></i></div><span>머거바라가 하루를 읽는 중…</span></div>`;
   }
   return text;
 }
@@ -908,7 +908,7 @@ const result = {
         <div class="bubble">${h(isToday ? pickPhrase(r, s.key) : pickPhrase(r, s.key).replace(/오늘/g, '이 날'))}</div>
         ${(() => {
           const inner = feedbackInner(s.key);
-          return inner ? `<section class="card fb-card"><div class="fb-head">💬 <b>Claude의 하루 피드백</b></div>${inner}</section>` : '';
+          return inner ? `<section class="card fb-card"><div class="fb-head">💬 <b>머거바라의 하루 피드백</b></div>${inner}</section>` : '';
         })()}
         <section class="card result-card">
           <div class="r-row"><span>🍽️ 먹은 에너지</span><b data-count="${r.intake}" data-suffix=" kcal">${fmt(r.intake)} kcal</b></div>
